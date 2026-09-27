@@ -1,0 +1,19 @@
+{
+  "name": "fantasy-fortress",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "preview": "npm --prefix client run preview",
+    "start": "node server/src/server.js",
+    "server": "node server/src/server.js",
+    "sync": "node server/scripts/runCatchUpSync.js",
+    "score": "node server/scripts/runScoringAndSupabase.js",
+    "score:sheets": "node server/scripts/runScoringSheetsOnly.js",
+    "sync:db": "node server/scripts/runSupabaseSyncOnly.js",
+    "cron": "node server/scripts/runNightlySyncCron.js",
+    "bot": "node server/scripts/runTelegramBotLocal.js"
+  }
+}

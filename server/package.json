@@ -1,0 +1,19 @@
+{
+  "name": "fantasy-fortress-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "cron": "node scripts/runNightlySyncCron.js",
+    "sync": "node scripts/runCatchUpSync.js",
+    "bot": "node scripts/runTelegramBotLocal.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.112.3",
+    "dotenv": "^17.4.2",
+    "googleapis": "^175.0.0",
+    "groq-sdk": "^1.5.0"
+  }
+}
