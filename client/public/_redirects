@@ -1,0 +1,13 @@
+# SPA fallback for clean paths.
+#
+# The app uses real paths (/table, /team/choakers-fc) rather than hash routes,
+# so a refresh or a shared link makes the host request a path that has no file
+# behind it. This rule serves index.html for anything unknown and lets React
+# Router take over.
+#
+# Honoured by both Netlify and Cloudflare Pages. Vite copies this from
+# client/public/ into dist/ automatically — no build config needed.
+#
+# For Vercel, see client/vercel.json instead.
+
+/*    /index.html   200

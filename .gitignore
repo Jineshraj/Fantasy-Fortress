@@ -32,3 +32,15 @@ opencode.json
 # Common ignores
 .DS_Store
 *.log
+
+# Temporary Agent & Audit Reports
+debug.md
+update.md
+routing-plan.md
+ux-plan.md
+ux-audit.md
+
+# Local Test Scripts (contains PC filepaths)
+client/*.mjs
+client/render-test*
+client/logo-check*

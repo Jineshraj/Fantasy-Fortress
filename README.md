@@ -64,6 +64,53 @@ npm run score:sheets -- 6
 npm run sync:db -- 6
 ```
 
+### 4. Frontend Tests
+```bash
+npm --prefix client run test:render   # renders every screen against live Supabase data
+npm --prefix client run test:logos    # verifies all 16 team logos exist and are mapped
+```
+
+---
+
+## 🌐 Deploying the Client
+
+The client is a static SPA that reads Supabase directly. Build with:
+
+```bash
+npm --prefix client run build     # output in client/dist
+```
+
+### Routes
+
+The app uses **clean paths**, not hash routes:
+
+| Path | Screen |
+|---|---|
+| `/table` | League table (also `/table?gw=3` to pin a gameweek) |
+| `/squad` | Squads |
+| `/fixtures` | Fixtures |
+| `/stats` | Player stats |
+| `/h2h` | H2H League |
+| `/cup` | Super Cup |
+| `/team/<slug>` | Team detail (e.g. `/team/choakers-fc?gw=3`) |
+
+### ⚠️ Required: SPA fallback
+
+Because the app uses real paths, refreshing `/team/choakers-fc` asks the host for a file that does
+not exist. **The host must serve `index.html` for any unknown path**, or shared links will 404.
+
+| Host | Config | Status |
+|---|---|---|
+| **Netlify** | `client/public/_redirects` | ✅ shipped — copied to `dist/` automatically |
+| **Cloudflare Pages** | `client/public/_redirects` | ✅ shipped — same file works |
+| **Vercel** | `client/vercel.json` | ✅ shipped |
+| Local `npm run dev` / `preview` | none needed | Vite does SPA fallback by default |
+| **Self-hosting from `server.js`** | — | ❌ **not supported yet** |
+
+If you serve the built client from your own Node server, `server.js` currently only handles
+`/health`, `/webhook/telegram` and `/api/sync` — it does **not** serve static files or do SPA
+fallback. Adding that is a backend change; until then, host the client separately.
+
 ---
 
 ## 📄 License

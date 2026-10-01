@@ -1,42 +1,76 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Swords, Trophy } from 'lucide-react'
-import { h2hWeeks, teams } from '@/data/mock-fantasy'
+import { H2H_WEEKS, groupATeams, groupBTeams } from '@/data/tournamentFixtures'
+import { buildH2HStandings, buildH2HWeek } from '@/data/live'
+import { TeamMark } from './TeamMark'
+import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
 import { cn } from '@/lib/utils'
 
-const initials = (name) =>
-  name
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase()
+const GroupTable = ({ title, rows, scored }) => (
+  <div className="group-table">
+    <div className="h2h-group-head">{title}</div>
+    {rows.length === 0 ? (
+      <p className="group-empty">No results yet</p>
+    ) : (
+      <div className="h2h-leader-list">
+        {rows.map((t, i) => (
+          <div key={t.team} className="h2h-leader-row">
+            <span className={cn('rank-badge', i < 3 && `podium-${i + 1}`)}>{i + 1}</span>
+            <strong>{t.team}</strong>
+            {scored ? (
+              <span className="numeric">
+                {t.pts} pts · {t.w}W {t.d}D {t.l}L
+              </span>
+            ) : (
+              <span className="numeric">–</span>
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)
 
 export function H2H() {
-  const [activeGw, setActiveGw] = useState(h2hWeeks[0].gw)
-  const week = h2hWeeks.find((w) => w.gw === activeGw) ?? h2hWeeks[0]
+  const [activeGw, setActiveGw] = useState(() => H2H_WEEKS[H2H_WEEKS.length - 1].gw)
+  const [state, setState] = useState({ status: 'loading', week: null, standings: null, error: null })
 
-  const findTeam = (name) => teams.find((t) => t.name === name)
+  const target = useMemo(
+    () => H2H_WEEKS.find((w) => w.gw === activeGw) ?? H2H_WEEKS[0],
+    [activeGw]
+  )
 
-  const standings = [...teams]
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 4)
-    .map((t, i) => ({ ...t, rank: i + 1, wins: 4 - i, losses: i }))
+  const load = useCallback(() => {
+    setState((s) => ({ ...s, status: 'loading', error: null }))
+    Promise.all([buildH2HWeek(target), buildH2HStandings(H2H_WEEKS)])
+      .then(([week, standings]) =>
+        setState({ status: 'ready', week, standings, error: null })
+      )
+      .catch((err) => setState({ status: 'error', week: null, standings: null, error: err?.message }))
+  }, [target])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  const allPlayed = state.week?.matches.every((m) => m.played) ?? false
 
   return (
     <section className="page-section">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Weekly head-to-head</p>
+          <p className="eyebrow">Weekly head-to-head · 2 groups of 8</p>
           <h1>H2H matchups</h1>
         </div>
       </div>
 
-      <div className="segmented" role="group" aria-label="H2H gameweek">
-        {h2hWeeks.map((w) => (
+      <div className="filter-chips" role="group" aria-label="H2H gameweek">
+        {H2H_WEEKS.map((w) => (
           <button
             key={w.gw}
             type="button"
             className={activeGw === w.gw ? 'active' : ''}
+            aria-pressed={activeGw === w.gw}
             onClick={() => setActiveGw(w.gw)}
           >
             GW {w.gw}
@@ -44,61 +78,80 @@ export function H2H() {
         ))}
       </div>
 
-      <div className="h2h-list">
-        {week.matches.map((m) => {
-          const home = findTeam(m.home)
-          const away = findTeam(m.away)
-          const isFinal = m.winner !== null
-          const homeWins = m.winner === 'home'
-          const awayWins = m.winner === 'away'
-          return (
-            <article key={m.id} className={cn('h2h-card', isFinal && 'final')}>
-              <div className="h2h-meta">
-                <span>GW {week.gw}{isFinal ? ' · Final' : ' · Upcoming'}</span>
-              </div>
-              <div className="h2h-row">
-                <div className={cn('h2h-side', homeWins && 'winner', awayWins && 'loser')}>
-                  <span className="avatar">{initials(m.home)}</span>
-                  <strong>{m.home}</strong>
+      {state.status === 'loading' && <LoadingBlock label="Loading head-to-head" rows={4} />}
+
+      {state.status === 'error' && <InlineError message={state.error} onRetry={load} />}
+
+      {state.status === 'ready' && !allPlayed && (
+        <div className="notice-strip">
+          <Swords aria-hidden="true" />
+          GW {activeGw} head-to-heads have not all been scored yet — unscored ties show as dashes.
+        </div>
+      )}
+
+      {state.status === 'ready' && (
+        <div className="h2h-list">
+          {state.week.matches.map((m) => {
+            const homeWins = m.winner === 'home'
+            const awayWins = m.winner === 'away'
+            return (
+              <article key={m.id} className={cn('h2h-card', m.played && 'final')}>
+                <div className="h2h-meta">
+                  <span>
+                    {m.group} · {m.played ? 'Final' : 'Upcoming'}
+                  </span>
                 </div>
-                <div className="h2h-score">
-                  <strong className="numeric">{m.homeGw}</strong>
-                  <i>–</i>
-                  <strong className="numeric">{m.awayGw}</strong>
+                <div className="h2h-row">
+                  <div className={cn('h2h-side', homeWins && 'winner', awayWins && 'loser')}>
+                    <TeamMark name={m.home} />
+                    <strong>{m.home}</strong>
+                  </div>
+                  <div className="h2h-score">
+                    <strong className="numeric">{m.homeGw ?? '–'}</strong>
+                    <i>–</i>
+                    <strong className="numeric">{m.awayGw ?? '–'}</strong>
+                  </div>
+                  <div className={cn('h2h-side', awayWins && 'winner', homeWins && 'loser')}>
+                    <strong>{m.away}</strong>
+                    <TeamMark name={m.away} />
+                  </div>
                 </div>
-                <div className={cn('h2h-side', awayWins && 'winner', homeWins && 'loser')}>
-                  <strong>{m.away}</strong>
-                  <span className="avatar">{initials(m.away)}</span>
-                </div>
-              </div>
-              {(home || away) && (
-                <div className="h2h-foot">
-                  {home && <small>#{home.rank} in standings</small>}
-                  {away && <small>#{away.rank} in standings</small>}
-                </div>
-              )}
-            </article>
-          )
-        })}
-      </div>
+              </article>
+            )
+          })}
+        </div>
+      )}
 
       <div className="h2h-leader">
         <div className="h2h-leader-head">
           <Trophy />
           <div>
             <strong>H2H standings</strong>
-            <small>After GW {week.gw}</small>
+            <small>3 points for a win · stadium bonus excluded</small>
           </div>
         </div>
-        <div className="h2h-leader-list">
-          {standings.map((t, i) => (
-            <div key={t.name} className="h2h-leader-row">
-              <span className={cn('rank-badge', i < 3 && `podium-${i + 1}`)}>{i + 1}</span>
-              <strong>{t.name}</strong>
-              <span className="numeric">{t.wins}W · {t.losses}L</span>
-            </div>
-          ))}
-        </div>
+
+        {state.status === 'ready' && state.standings ? (
+          <>
+            <GroupTable title="Group A" rows={state.standings.GroupA} scored />
+            <GroupTable title="Group B" rows={state.standings.GroupB} scored />
+          </>
+        ) : state.status === 'ready' ? (
+          <>
+            <GroupTable
+              title="Group A"
+              rows={groupATeams.map((team) => ({ team, pts: 0 }))}
+              scored={false}
+            />
+            <GroupTable
+              title="Group B"
+              rows={groupBTeams.map((team) => ({ team, pts: 0 }))}
+              scored={false}
+            />
+          </>
+        ) : (
+          <LoadingBlock label="Loading standings" rows={4} />
+        )}
       </div>
     </section>
   )

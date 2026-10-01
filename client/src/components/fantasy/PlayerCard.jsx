@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils'
+import { PlayerPhoto } from './Imagery'
 
 export function PlayerCard({ item, onClick, compact = false }) {
   return (
@@ -10,10 +11,8 @@ export function PlayerCard({ item, onClick, compact = false }) {
       <span className="player-top">
         <span className="position-tag">{item.pos}</span>
       </span>
-      <span className="shirt">
-        <span>{item.clubCode}</span>
-      </span>
-      <strong>{item.short}</strong>
+      <PlayerPhoto player={item} />
+      <strong>{item.short || item.name}</strong>
       <span className="player-bottom">
         <small>{item.clubCode}</small>
         <b className="numeric">{item.points}</b>

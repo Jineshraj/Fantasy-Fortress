@@ -1,5 +1,14 @@
 import { useEffect } from 'react'
-import { X } from 'lucide-react'
+import { Circle, Hand, Shield, Square, X } from 'lucide-react'
+import { PlayerPhoto } from './Imagery'
+
+const EVENT_ICONS = {
+  goals: Circle,
+  assists: Hand,
+  cleanSheet: Shield,
+  yellowCards: Square,
+  redCards: X,
+}
 
 export function PlayerModal({ item, onClose }) {
   useEffect(() => {
@@ -12,9 +21,26 @@ export function PlayerModal({ item, onClose }) {
 
   const stats = [
     ['Season', item.season],
-    ['Price', `£${item.price}M`],
     ['GW', item.points],
+    ['Minutes', item.minutes ?? 0],
   ]
+
+  // Match event breakdown — only rendered once the DB supplies the detail
+  // columns (populated by supabaseSyncService from the scoring engine).
+  const events = [
+    ['goals', item.goals],
+    ['assists', item.assists],
+    ['cleanSheet', item.cleanSheet],
+    ['yellowCards', item.yellowCards],
+    ['redCards', item.redCards],
+    ['ownGoals', item.ownGoals],
+    ['penaltyMiss', item.penaltyMiss],
+    ['penaltySave', item.penaltySave],
+  ].filter(([key, val]) => {
+    if (val === null || val === undefined) return false
+    if (key === 'cleanSheet') return val === true
+    return Number(val) > 0
+  })
 
   return (
     <div
@@ -37,11 +63,11 @@ export function PlayerModal({ item, onClose }) {
           <X />
         </button>
         <div className="modal-hero">
-          <div className="modal-shirt shirt">
-            <span>{item.clubCode}</span>
-          </div>
+          <PlayerPhoto player={item} className="modal-photo-wrap" />
           <div>
-            <span className="position-tag">{item.pos} · {item.club}</span>
+            <span className="position-tag">
+              {item.pos} · {item.club}
+            </span>
             <h2 id="player-modal-title">{item.name}</h2>
           </div>
         </div>
@@ -53,6 +79,20 @@ export function PlayerModal({ item, onClose }) {
             </div>
           ))}
         </div>
+        {events.length > 0 && (
+          <div className="modal-event-row">
+            {events.map(([key, val]) => {
+              const Icon = EVENT_ICONS[key] || Circle
+              return (
+                <span key={key}>
+                  <Icon aria-hidden="true" />
+                  <b className="numeric">{key === 'cleanSheet' ? 'CS' : val}</b>
+                  {key === 'cleanSheet' ? '' : key.replace('Cards', '').replace('pen', 'Pen')}
+                </span>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

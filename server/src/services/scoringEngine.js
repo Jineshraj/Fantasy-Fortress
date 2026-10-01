@@ -878,7 +878,7 @@ export async function calculateAndSyncTeamScores(targetGw) {
     for (const p of effectiveStartingXI) {
       const canon = resolveCanonical(p.player_name)
       const pData = lookupPlayerInMap(playerPointsMap, p.player_name, teamName) || { pts: 0, club: canon.club }
-      const detail = lookupPlayerInMap(playerStatsDetailMap, p.player_name, teamName) || { minutes: 0, goals: 0, assists: 0, isCS: false, club: pData.club }
+      const detail = lookupPlayerInMap(playerStatsDetailMap, p.player_name, teamName) || { minutes: 0, goals: 0, assists: 0, isCS: false, penMiss: 0, penSave: 0, yellow: 0, red: 0, ownGoals: 0, club: pData.club }
       const isEffectiveCap = p.player_name === effectiveCaptainName
       const multiplier = isEffectiveCap ? 2 : 1
 
@@ -935,6 +935,16 @@ export async function calculateAndSyncTeamScores(targetGw) {
         multiplier,
         final_pts: finalPts,
         minutes: detail.minutes || (pData.pts > 0 ? 90 : 0),
+        // Raw event breakdown (H-12): carried through to Supabase so the
+        // frontend can show per-player goals/assists/CS/cards detail.
+        goals: Number(detail.goals || 0),
+        assists: Number(detail.assists || 0),
+        isCS: Boolean(detail.isCS),
+        yellow: Number(detail.yellow || 0),
+        red: Number(detail.red || 0),
+        ownGoals: Number(detail.ownGoals || 0),
+        penMiss: Number(detail.penMiss || 0),
+        penSave: Number(detail.penSave || 0),
         played: detail.minutes > 0 || pData.pts > 0,
         isEffectiveStarter: true,
       })
@@ -955,6 +965,16 @@ export async function calculateAndSyncTeamScores(targetGw) {
         multiplier: 0,
         final_pts: 0,
         minutes: detail.minutes || 0,
+        // Raw event breakdown (H-12) — same fields as effective starters so
+        // bench/subbed rows carry the detail too.
+        goals: Number(detail.goals || 0),
+        assists: Number(detail.assists || 0),
+        isCS: Boolean(detail.isCS),
+        yellow: Number(detail.yellow || 0),
+        red: Number(detail.red || 0),
+        ownGoals: Number(detail.ownGoals || 0),
+        penMiss: Number(detail.penMiss || 0),
+        penSave: Number(detail.penSave || 0),
         played: detail.minutes > 0 || pData.pts > 0,
         isEffectiveStarter: false,
       })

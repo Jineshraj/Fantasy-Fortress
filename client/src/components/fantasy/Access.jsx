@@ -1,8 +1,13 @@
 import { useState } from 'react'
 import { ArrowUp, LockKeyhole, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { BRAND } from '@/config/brand'
 import { cn } from '@/lib/utils'
-import { Crest } from './Crest'
+import { BrandLogo } from './BrandLogo'
+
+// Demo access code. Not a security control — it ships in the bundle. Kept
+// working for now; real per-team login IDs are still to come.
+const DEMO_CODE = 'SLS14'
 
 export function Access({ onSuccess }) {
   const [code, setCode] = useState('')
@@ -10,7 +15,7 @@ export function Access({ onSuccess }) {
 
   const submit = (event) => {
     event.preventDefault()
-    if (code.toUpperCase() === 'SLS14') {
+    if (code.toUpperCase() === DEMO_CODE) {
       onSuccess()
     } else {
       setError(true)
@@ -20,10 +25,10 @@ export function Access({ onSuccess }) {
   return (
     <main className="access-screen">
       <section className="access-card" aria-labelledby="access-title">
-        <Crest />
-        <div className="eyebrow">Sunday League Society</div>
+        <BrandLogo />
+        <div className="eyebrow">{BRAND.full}</div>
         <h1 id="access-title">Enter team access code</h1>
-        <p>Step through the tunnel. Your squad and private league are waiting.</p>
+        <p>Step through the gates. Your squad and private league are waiting.</p>
         <form onSubmit={submit} className="access-form">
           <label htmlFor="team-code">Team access code</label>
           <div className={cn('code-wrap', error && 'code-error')}>
@@ -51,8 +56,8 @@ export function Access({ onSuccess }) {
         </form>
         <p className="demo-code">
           Demo access{' '}
-          <button type="button" onClick={() => setCode('SLS14')}>
-            SLS14
+          <button type="button" onClick={() => setCode(DEMO_CODE)}>
+            {DEMO_CODE}
           </button>
         </p>
       </section>
