@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, Swords, Trophy } from 'lucide-react'
+import { ChevronDown, RefreshCw, Swords, Trophy } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import { BRAND } from '@/config/brand'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,8 @@ const COMPETITION_ICONS = { 'h2h': Swords, supercup: Trophy }
 export function Header({
   stamp,
   stampStale = false,
+  onRefresh,
+  refreshing = false,
   competitions = [],
   onCompetition,
   activeCompetition,
@@ -48,7 +50,20 @@ export function Header({
         </span>
       </div>
 
-      <div className="topbar-right" ref={ref}>
+<div className="topbar-right" ref={ref}>
+        {onRefresh && (
+          <button
+            type="button"
+            className="icon-button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            aria-label={refreshing ? 'Refreshing data' : 'Refresh data'}
+            title="Check for a newer sync"
+          >
+            <RefreshCw aria-hidden="true" className={refreshing ? 'spin' : ''} />
+          </button>
+        )}
+
         {stamp && (
           <div
             className={cn('sync-stamp', stampStale && 'stale')}

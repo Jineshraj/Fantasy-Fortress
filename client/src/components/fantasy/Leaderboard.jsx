@@ -59,8 +59,9 @@ export function Leaderboard({ teams, latestGw, gw }) {
 
   const sorted = [...(mode === 'overall' ? overall : weekly)].filter(matches)
 
-  // Headline for the selected week — gives the toggle something to say even
-  // when the ordering is unchanged.
+  // Headline for the selected week. Three separate wrapping pills could eat
+  // two rows of a 360px screen, so this is one line on mobile and expands to
+  // the full set from 700px up.
   const movers = useMemo(() => {
     const played = teams.filter((t) => gwPoints(t, week) > 0)
     if (played.length === 0) return null
@@ -108,7 +109,12 @@ export function Leaderboard({ teams, latestGw, gw }) {
       </div>
 
       {movers && (
-        <div className="mover-strip">
+        <div className="mover-strip" role="note" aria-label="Weekly highlights">
+          {/* Mobile shows only the haul; the rest of the detail is in the
+              per-row movement column. From 700px the full set is revealed. */}
+          <span className="mover best">
+            Biggest haul <strong className="numeric">{movers.best?.pts}</strong> · {movers.best?.team.name}
+          </span>
           {movers.up && movers.up.delta > 0 && (
             <span className="mover up">
               <TrendingUp aria-hidden="true" />
@@ -119,11 +125,6 @@ export function Leaderboard({ teams, latestGw, gw }) {
             <span className="mover down">
               <TrendingDown aria-hidden="true" />
               <strong>{movers.down.team.name}</strong> down {Math.abs(movers.down.delta)}
-            </span>
-          )}
-          {movers.best && (
-            <span className="mover best">
-              Biggest haul <strong className="numeric">{movers.best.pts}</strong> · {movers.best.team.name}
             </span>
           )}
         </div>
@@ -169,15 +170,15 @@ export function Leaderboard({ teams, latestGw, gw }) {
                   </span>
                 </span>
 
-                {delta !== 0 && (
-                  <span
-                    className={cn('rank-move', delta > 0 ? 'up' : 'down')}
-                    aria-label={`${delta > 0 ? 'Up' : 'Down'} ${Math.abs(delta)} places versus overall rank`}
-                  >
-                    {delta > 0 ? '▲' : '▼'}
-                    {Math.abs(delta)}
-                  </span>
-                )}
+                {/* Always rendered, even with no movement. The grid is
+                    five tracks wide, so omitting this cell would let GW and
+                    Total auto-place one track left of their headings. */}
+                <span
+                  className={cn('rank-move', delta > 0 ? 'up' : delta < 0 ? 'down' : 'none')}
+                  aria-hidden={delta === 0}
+                >
+                  {delta === 0 ? '–' : `${delta > 0 ? '▲' : '▼'}${Math.abs(delta)}`}
+                </span>
 
                 <strong className="numeric gw-points">{weeklyPts || '–'}</strong>
                 <strong className="numeric total-points">{team.total}</strong>

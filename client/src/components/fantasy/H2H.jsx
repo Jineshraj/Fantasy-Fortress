@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Swords, Trophy } from 'lucide-react'
 import { H2H_WEEKS, groupATeams, groupBTeams } from '@/data/tournamentFixtures'
-import { buildH2HStandings, buildH2HWeek } from '@/data/live'
+import { buildH2HStandings, buildH2HWeek, scoredGameweeks } from '@/data/live'
 import { TeamMark } from './TeamMark'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
 import { cn } from '@/lib/utils'
@@ -32,8 +32,29 @@ const GroupTable = ({ title, rows, scored }) => (
 )
 
 export function H2H() {
+  // Default to the last week in the schedule, corrected once we know which
+  // gameweeks actually have scores. GW 20 is the final scheduled round, so
+  // using it unconditionally meant the screen opened on 8 unscored matchups
+  // while GW 6 — the one week with real results — sat a tap away.
   const [activeGw, setActiveGw] = useState(() => H2H_WEEKS[H2H_WEEKS.length - 1].gw)
+  const [corrected, setCorrected] = useState(false)
   const [state, setState] = useState({ status: 'loading', week: null, standings: null, error: null })
+
+  useEffect(() => {
+    if (corrected) return
+    let cancelled = false
+    scoredGameweeks()
+      .then((scored) => {
+        if (cancelled || scored.size === 0) return
+        const best = [...H2H_WEEKS].reverse().find((w) => scored.has(w.gw))
+        if (best && best.gw !== activeGw) setActiveGw(best.gw)
+        setCorrected(true)
+      })
+      .catch(() => setCorrected(true))
+    return () => {
+      cancelled = true
+    }
+  }, [corrected, activeGw])
 
   const target = useMemo(
     () => H2H_WEEKS.find((w) => w.gw === activeGw) ?? H2H_WEEKS[0],

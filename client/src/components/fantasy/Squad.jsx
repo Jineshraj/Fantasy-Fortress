@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BarChart3, ChevronDown, TriangleAlert, UserSearch } from 'lucide-react'
+import { ChevronDown, TriangleAlert, UserSearch } from 'lucide-react'
 import { fetchTeamSquad } from '@/data/live'
 import { PlayerPhoto } from './Imagery'
 import { TeamMark } from './TeamMark'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
 import { SearchBox } from '@/components/ui/SearchBox'
+import { KEYS, getStored, setStored } from '@/lib/storage'
 
 const GROUPS = ['GKP', 'DEF', 'MID', 'FWD']
 const normPos = (pos) => (pos === 'GK' ? 'GKP' : pos)
@@ -21,11 +22,15 @@ const normPos = (pos) => (pos === 'GK' ? 'GKP' : pos)
 export function Squad({ teams, gw }) {
   const [openGroup, setOpenGroup] = useState('GKP')
   const [query, setQuery] = useState('')
-  const [picked, setPicked] = useState(null)
+  // Remembered so returning to the tab shows the team you were actually looking
+  // at, instead of defaulting to whoever is top of the standings.
+  const [picked, setPicked] = useState(() => getStored(KEYS.lastTeam))
   const [state, setState] = useState({ status: 'idle', squad: null, error: null })
 
   const teamOptions = useMemo(() => teams.map((t) => t.name), [teams])
-  const activeTeam = picked ?? teamOptions[0] ?? null
+  // Guard against a remembered team that no longer exists (renamed franchise).
+  const remembered = picked && teamOptions.includes(picked) ? picked : null
+  const activeTeam = remembered ?? teamOptions[0] ?? null
   const activeMeta = useMemo(() => teams.find((t) => t.name === activeTeam) ?? null, [teams, activeTeam])
   const q = query.trim().toLowerCase()
 
@@ -76,48 +81,58 @@ export function Squad({ teams, gw }) {
 
   return (
     <section className="page-section">
-      <div className="section-heading">
-        <div>
-          <p className="eyebrow">Squad · Gameweek {gw}</p>
-          <h1>{activeTeam || 'Squad'}</h1>
+      {/* Heading row carries crest + team name; the selector is a compact
+          affordance on the same row rather than a second page header. */}
+      <div className="squad-head">
+        <div className="squad-head-id">
+          {activeTeam && <TeamMark name={activeTeam} size={40} />}
+          <div className="squad-head-copy">
+            <p className="eyebrow">Squad · Gameweek {gw}</p>
+            <h1>{activeTeam || 'Squad'}</h1>
+            {activeMeta && (
+              <small className="squad-head-meta">
+                Rank #{activeMeta.rank} · {activeMeta.total} pts overall
+              </small>
+            )}
+          </div>
         </div>
+
+        {teamOptions.length > 1 && (
+          <label className="team-select" htmlFor="squad-team">
+            <span className="visually-hidden">Choose a team</span>
+            <span className="team-select-control team-select-compact">
+              <select
+                id="squad-team"
+                value={activeTeam ?? ''}
+                aria-label="Choose a team"
+                onChange={(e) => {
+                  setPicked(e.target.value)
+                  setStored(KEYS.lastTeam, e.target.value)
+                }}
+              >
+                {teamOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown aria-hidden="true" className="select-caret" />
+            </span>
+          </label>
+        )}
       </div>
 
-      {teamOptions.length > 1 && (
-        <div className="team-select">
-          <label htmlFor="squad-team">Team</label>
-          <div className="team-select-control">
-            {activeTeam && <TeamMark name={activeTeam} size={26} />}
-            <select
-              id="squad-team"
-              value={activeTeam ?? ''}
-              onChange={(e) => setPicked(e.target.value)}
-            >
-              {teamOptions.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown aria-hidden="true" className="select-caret" />
-          </div>
-          {activeMeta && (
-            <small className="team-select-meta">
-              Rank #{activeMeta.rank} · {activeMeta.total} pts overall
-            </small>
-          )}
-        </div>
-      )}
-
       {state.status === 'ready' && (
-        <article className="points-summary-card">
-          <BarChart3 />
-          <span>Gameweek {gw} squad total</span>
-          <strong className="numeric">{squadTotal} pts</strong>
-          <small>
-            {totalPlayers} players · season {activeMeta?.total ?? 0} pts in the league table
-          </small>
-        </article>
+        <div className="squad-summary">
+          <div className="squad-summary-main">
+            <strong className="numeric">{squadTotal}</strong>
+            <span>squad total · this week</span>
+          </div>
+          <div className="squad-summary-sub">
+            <span className="numeric">{activeMeta?.total ?? 0}</span> season total ·{' '}
+            <span className="numeric">{totalPlayers}</span> players
+          </div>
+        </div>
       )}
 
       {state.status === 'loading' && <LoadingBlock label="Loading squad" rows={5} />}

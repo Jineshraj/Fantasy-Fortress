@@ -28,6 +28,7 @@ __v0_jsx-dev-runtime.ts
 .aider*
 .kilo/
 opencode.json
+__agent__/
 
 # Common ignores
 .DS_Store

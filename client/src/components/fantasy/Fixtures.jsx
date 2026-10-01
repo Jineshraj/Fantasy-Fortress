@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarClock, ChevronDown, Tv } from 'lucide-react'
+import { CalendarClock, ChevronDown } from 'lucide-react'
 import { fetchFixtures } from '@/data/live'
 import { clubBadge } from '@/data/playerImages'
 import { ClubMark } from './Imagery'
@@ -104,9 +104,21 @@ export function Fixtures({ gw }) {
                       return (
                         <article key={f.id} className={cn('fixture-card', isFinal && 'final')}>
                           <div className="fixture-meta">
-                            <span className="fixture-kickoff">{isFinal ? 'FT' : f.kickoff}</span>
-                            <span className="fixture-status">
-                              {isFinal ? <Tv /> : <CalendarClock />}
+                            {/* One status treatment, not two. Previously a final
+                                fixture showed both "FT" and "Full time" in the same
+                                row. The score is already on the card, so for a
+                                final the kickoff slot is dropped entirely and the
+                                dot + label carries the state on its own. Upcoming
+                                fixtures keep the kickoff time, which is the useful
+                                part, and drop the redundant word. */}
+                            {!isFinal && (
+                              <span className="fixture-kickoff">{f.kickoff}</span>
+                            )}
+                            <span
+                              className={cn('fixture-status', isFinal && 'is-final')}
+                              aria-label={isFinal ? 'Full time' : 'Upcoming'}
+                            >
+                              <span className="status-dot" aria-hidden="true" />
                               {isFinal ? 'Full time' : 'Upcoming'}
                             </span>
                           </div>

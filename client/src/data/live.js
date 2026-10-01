@@ -309,6 +309,29 @@ async function fetchH2HScores() {
   return map
 }
 
+/** Highest gameweek that actually has team scores, or null when none do. */
+export async function latestScoredGw() {
+  const scores = await fetchH2HScores()
+  if (scores.size === 0) return null
+  let max = 0
+  scores.forEach((_, key) => {
+    const gw = Number(String(key).split(':')[0].replace('GW', ''))
+    if (Number.isFinite(gw)) max = Math.max(max, gw)
+  })
+  return max || null
+}
+
+/** Set of gameweeks that have at least one team score. */
+export async function scoredGameweeks() {
+  const scores = await fetchH2HScores()
+  const set = new Set()
+  scores.forEach((_, key) => {
+    const gw = Number(String(key).split(':')[0].replace('GW', ''))
+    if (Number.isFinite(gw)) set.add(gw)
+  })
+  return set
+}
+
 // Returns a decorated H2H week: each match gets homeGw/awayGw + winner.
 export async function buildH2HWeek(week) {
   const scores = await fetchH2HScores()
@@ -498,6 +521,23 @@ export function prefetchAll(onProgress) {
 
 /** Retry path: drop the cache and boot again. */
 export function retryPrefetch(onProgress) {
+  clearLiveCache()
+  prefetchPromise = null
+  return prefetchAll(onProgress)
+}
+
+/**
+ * Revalidate in the background.
+ *
+ * Used by the header refresh button and the tab-focus refetch. It clears the
+ * memo cache so the next read hits the network, then re-warms everything.
+ *
+ * The caller is responsible for keeping its current data on screen while this
+ * is in flight — that is what makes it a background refresh rather than a
+ * blanking reload. A rejection means the refresh failed; callers that already
+ * have valid data should swallow it.
+ */
+export function revalidate(onProgress) {
   clearLiveCache()
   prefetchPromise = null
   return prefetchAll(onProgress)

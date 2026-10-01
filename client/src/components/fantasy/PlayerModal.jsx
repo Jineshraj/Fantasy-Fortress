@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Circle, Hand, Shield, Square, X } from 'lucide-react'
 import { PlayerPhoto } from './Imagery'
 
@@ -10,13 +10,44 @@ const EVENT_ICONS = {
   redCards: X,
 }
 
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export function PlayerModal({ item, onClose }) {
+  const dialogRef = useRef(null)
+  const openerRef = useRef(null)
+
   useEffect(() => {
+    // Remember what had focus so it can be restored on close.
+    openerRef.current = document.activeElement
+    const dialog = dialogRef.current
+    dialog?.querySelector(FOCUSABLE)?.focus()
+
     const handleKeyDown = (event) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        onClose()
+        return
+      }
+      // Keep Tab inside the dialog — otherwise focus walks out into the page
+      // behind the overlay.
+      if (event.key !== 'Tab' || !dialog) return
+      const nodes = [...dialog.querySelectorAll(FOCUSABLE)].filter(
+        (n) => n.offsetWidth > 0 || n.offsetHeight > 0
+      )
+      if (nodes.length === 0) return
+      const edge = event.shiftKey ? nodes[0] : nodes[nodes.length - 1]
+      if (document.activeElement === edge) {
+        event.preventDefault()
+        ;(event.shiftKey ? nodes[nodes.length - 1] : nodes[0]).focus()
+      }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      // Return focus to the card that opened the dialog.
+      openerRef.current?.focus?.()
+    }
   }, [onClose])
 
   const stats = [
@@ -49,6 +80,7 @@ export function PlayerModal({ item, onClose }) {
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="player-modal-title"

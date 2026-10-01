@@ -24,8 +24,9 @@ import { StatsLeaders } from './StatsLeaders'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { ScrollRestoration } from '@/components/ui/ScrollRestoration'
 import { ErrorState } from '@/components/ui/states'
-import { prefetchAll, retryPrefetch } from '@/data/live'
+import { prefetchAll, revalidate, retryPrefetch } from '@/data/live'
 import { DEFAULT_ROUTE, ROUTES, TITLE_SUFFIX, clampGw, findTeamBySlug, routeTitle } from '@/lib/routes'
+import { KEYS, getStored } from '@/lib/storage'
 
 // Primary nav follows the weekly habit loop. Competitions live in the header.
 const TABS = [
@@ -71,7 +72,11 @@ const stampFrom = (updatedAt, latestGw) => {
 }
 
 export function FantasyApp() {
-  const [stage, setStage] = useState('access') // access | splash | hub
+  // Returning visitors skip the gate. The code is already public in the bundle,
+  // so this adds no security — real auth replaces the whole mechanism.
+  const [stage, setStage] = useState(() =>
+    typeof window !== 'undefined' && getStored(KEYS.unlocked) === '1' ? 'splash' : 'access'
+  )
   const [boot, setBoot] = useState({
     status: 'idle',
     data: null,
@@ -79,6 +84,7 @@ export function FantasyApp() {
     progress: { done: [], failed: [] },
   })
   const [retrying, setRetrying] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
@@ -144,6 +150,39 @@ export function FantasyApp() {
 
   const teams = boot.data?.standings?.teams ?? []
   const latestGw = boot.data?.standings?.latestGw ?? 1
+
+  // Background refresh. Deliberately keeps the current data on screen while the
+  // request is in flight, so refreshing never blanks the UI. A failure is
+  // swallowed — stale data plus a working retry beats an empty screen.
+  const runRefresh = useCallback(() => {
+    if (refreshing) return
+    setRefreshing(true)
+    revalidate()
+      .then((result) => {
+        setBoot((b) => ({ ...b, status: 'ready', data: result, error: null }))
+        setGw((prev) => (prev >= result.standings.latestGw ? prev : result.standings.latestGw))
+      })
+      .catch(() => {
+        /* keep what we have; the stamp still shows its age */
+      })
+      .finally(() => setRefreshing(false))
+  }, [refreshing])
+
+  // Pick up a nightly sync that landed while the tab was in the background.
+  // Throttled so alt-tabbing doesn't hammer the database.
+  const lastCheck = useRef(0)
+  useEffect(() => {
+    if (stage !== 'hub' || !boot.data) return
+    const onVisible = () => {
+      if (document.hidden) return
+      const since = Date.now() - lastCheck.current
+      if (since < 120000) return
+      lastCheck.current = Date.now()
+      runRefresh()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [stage, boot.data, runRefresh])
 
   // Gameweek lives in the URL (?gw=N). Invalid values fall back to the latest
   // scored week and are rewritten out of the address bar.
@@ -211,6 +250,8 @@ export function FantasyApp() {
       <Header
         stamp={stamp?.text}
         stampStale={stamp?.stale}
+        onRefresh={runRefresh}
+        refreshing={refreshing}
         competitions={COMPETITIONS}
         activeCompetition={activeCompetition}
         onCompetition={(id) => navigate(id === 'h2h' ? ROUTES.h2h : ROUTES.cup)}

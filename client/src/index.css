@@ -24,12 +24,45 @@
   --secondary: #00d9ff; --secondary-foreground: #25003d; --muted: #25003d; --muted-foreground: #25003d;
   --accent: #00d9ff; --accent-foreground: #25003d; --destructive: #6c18d1; --border: #25003d;
   --input: #25003d; --ring: #39ff91; --radius: .65rem;
+
+  /* ---------------------------------------------------------------------
+     Redesign tokens (mobile-first audit §4)
+     --------------------------------------------------------------------- */
+
+  /* Text-safe accents. Neon #39ff91 is only ~1.32:1 on white, so it must
+     never be used as body text on a card. These are the checked darker
+     equivalents; neon stays for fills, borders and decorative marks. */
+  --primary-text: #0a7a41;   /* 5.0:1 on white */
+  --secondary-text: #016a86; /* 4.7:1 on white */
+  /* Light green for accent text sitting on the purple page background, where
+     the dark --primary-text would be unreadable. */
+  --primary-on-purple: #a8ffcf;
+  /* Muted text that sits on the purple page background, not on a card. */
+  --on-bg: #efe4ff;
+  --on-bg-muted: #d8c4f7;
+
+  /* Spacing scale — 4px base, limited set. */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px;
+
+  /* Surface levels (§4.4) — borders and shadows carry meaning, not decoration. */
+  --border-hairline: 1px;
+  --border-control: 2px;
+  --border-callout: 2px;
+  --shadow-interactive: 2px 2px 0 var(--border);
+  --shadow-callout: 4px 4px 0 var(--muted);
+  --shadow-hero: 6px 6px 0 var(--muted);
+
+  /* Bottom navigation, safe-area aware. One value drives both the nav and the
+     page clearance so they can never disagree. */
+  --nav-h: 84px;
+  --nav-clearance: calc(var(--nav-h) + env(safe-area-inset-bottom));
 }
 
 @layer base {
   * { @apply border-border outline-ring/50; }
-  html { @apply bg-background; }
-  body { @apply bg-background text-foreground; min-width: 320px; }
+  html { @apply bg-background; overflow-x: hidden; }
+  body { @apply bg-background text-foreground; min-width: 320px; overflow-x: hidden; }
   button { cursor: pointer; }
   h1,h2,h3 { font-family: var(--font-heading); font-weight: 800; letter-spacing: -.035em; }
 }
@@ -40,7 +73,7 @@
 
 .access-screen,.splash,.app-shell { min-height: 100svh; background: var(--background); }
 .access-screen,.splash { display: flex; align-items: center; justify-content: center; padding: 24px; position: relative; overflow: hidden; }
-.app-shell { padding-bottom: 84px; }
+.app-shell { padding-bottom: 84px; overflow-x: hidden; max-width: 100%; }
 
 .access-card { width: min(100%, 430px); display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 36px 24px 28px; border: 3px solid var(--border); border-radius: 18px; background: var(--card); color: var(--card-foreground); box-shadow: 10px 10px 0 var(--secondary); position: relative; }
 .crest { width: 92px; height: 104px; display: grid; place-items: center; position: relative; color: var(--primary); }
@@ -494,8 +527,10 @@
 /* --- brand / header --- */
 .brand-logo { width: 44px; height: 44px; flex: none; }
 .brand-logo-img { object-fit: contain; }
-.brand-name strong { font-family: var(--font-heading); font-size: 19px; font-weight: 800; text-transform: uppercase; letter-spacing: -.01em; color: var(--foreground); }
-.brand-season { font-size: 13px; }
+.brand-name { display: flex; flex-direction: column; justify-content: center; min-width: 0; line-height: 1.12; }
+.brand-name strong { font-family: var(--font-heading); font-size: 19px; font-weight: 800; text-transform: uppercase; letter-spacing: -.01em; color: var(--foreground); white-space: nowrap; }
+.brand-title { font-family: var(--font-heading); font-size: 19px; font-weight: 800; text-transform: uppercase; letter-spacing: -.01em; color: var(--foreground); white-space: nowrap; }
+.brand-season { font-size: 12px; font-weight: 700; color: var(--secondary); text-transform: uppercase; letter-spacing: .06em; }
 .pulse-crest .brand-logo { width: 152px; height: 152px; }
 .access-card .brand-logo { width: 152px; height: 152px; }
 .topbar { height: 84px; }
@@ -507,7 +542,8 @@
 
 /* --- typography --- */
 h1, h2, h3 { letter-spacing: -.03em; }
-.section-heading h1, .team-title h1 { font-size: 42px; }
+.section-heading h1 { font-size: 42px; }
+.team-title h1 { font-size: 42px; }
 .bench-heading h2 { font-size: 30px; }
 .bracket-round-head h2 { font-size: 24px; }
 .eyebrow { font-size: 13px; }
@@ -651,3 +687,270 @@ h1, h2, h3 { letter-spacing: -.03em; }
 /* ============================================================================
    END SCALE-UP PASS
    ========================================================================== */
+
+/* ============================================================================
+   IMPROVE-UX PASS
+   ========================================================================== */
+
+/* Header refresh action */
+.icon-button { width: 36px; height: 36px; display: grid; place-items: center; flex: none; border: 2px solid var(--secondary); border-radius: 50%; background: transparent; color: var(--foreground); }
+.icon-button:hover:not(:disabled) { background: var(--secondary); color: var(--secondary-foreground); }
+.icon-button:disabled { opacity: .6; cursor: progress; }
+.icon-button svg { width: 17px; height: 17px; }
+.topbar-right .spin { animation: spin 1s linear infinite; }
+
+/* ============================================================================
+   MOBILE-FIRST REDESIGN — Phases 1 & 2
+   Per improve-ux.md. Phase 1 = safety + mobile layout, Phase 2 = density +
+   hierarchy. Appended last so it wins the cascade.
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+   PHASE 1 · 1. Contrast — neon green is ~1.32:1 on white and must not be text
+   Accent *fills* keep neon; only text switches to the checked tokens.
+   ------------------------------------------------------------------------- */
+.score-badge strong,
+.squad-row>strong:last-child,
+.rank-move.up,
+.leader-value,
+.empty-state svg,
+.demo-code button,
+.accordion-group>button b,
+.h2h-leader-row .numeric { color: var(--primary-text); }
+
+/* Scores that sit on the purple score block need the light green instead. */
+.h2h-score strong { color: #ffffff; }
+
+/* .eyebrow appears on both white cards and the purple page — split by context. */
+.eyebrow { color: var(--primary-on-purple); }
+.access-card .eyebrow,
+.empty-state .eyebrow,
+.squad-summary .eyebrow,
+.h2h-card .eyebrow { color: var(--primary-text); }
+
+/* Muted text on the purple page background (not on a card). */
+.update-note,
+.back-link { color: var(--on-bg-muted); }
+
+/* ---------------------------------------------------------------------------
+   PHASE 1 · 2. Leaderboard grid — 5 explicit tracks, movement cell reserved
+   ------------------------------------------------------------------------- */
+.team-row,
+.leaderboard-head { grid-template-columns: 36px minmax(0, 1fr) 34px 46px 58px; }
+.rank-badge { grid-column: 1; }
+.row-team { grid-column: 2; }
+.rank-move { grid-column: 3; }
+.gw-points { grid-column: 4; }
+.total-points { grid-column: 5; }
+.rank-move.none { opacity: .25; font-weight: 400; }
+@media (min-width: 700px) {
+  .team-row, .leaderboard-head { grid-template-columns: 42px minmax(0, 1fr) 38px 66px 80px; }
+}
+
+/* ---------------------------------------------------------------------------
+   PHASE 1 · 3. Short-viewport Access / Splash
+   Both previously used `overflow: hidden`, which clipped on short phones and
+   in landscape.
+   ------------------------------------------------------------------------- */
+.access-screen, .splash { overflow-y: auto; overflow-x: hidden; }
+@media (max-height: 700px) {
+  .access-screen, .splash { align-items: flex-start; padding: 16px; }
+  .access-card { padding: 24px 20px 20px; gap: 12px; }
+  .access-card .brand-logo, .pulse-crest .brand-logo { width: 104px; height: 104px; }
+  .access-card h1, .splash h1 { font-size: clamp(26px, 7vw, 34px); }
+  .boot-steps { gap: 5px; }
+  .loading-track { bottom: 20px; }
+}
+
+/* ---------------------------------------------------------------------------
+   PHASE 1 · 4. Bottom nav safe-area clearance
+   One token drives both the nav and the page padding so they cannot disagree.
+   ------------------------------------------------------------------------- */
+.bottom-nav { height: var(--nav-h); padding-bottom: env(safe-area-inset-bottom); }
+.app-shell { padding-bottom: calc(var(--nav-clearance) + 16px); }
+@media (min-width: 700px) {
+  .bottom-nav { width: 420px; height: 80px; }
+  .app-shell { padding-bottom: calc(80px + 34px); }
+}
+
+/* ---------------------------------------------------------------------------
+   PHASE 2 · 6. Density — spacing + type pulled into the §4 ranges
+   ------------------------------------------------------------------------- */
+@media (max-width: 699px) {
+  .topbar { height: 72px; padding: 0 12px; gap: 8px; }
+  .topbar-right { gap: 6px; flex-shrink: 0; }
+  .brand-logo { width: 38px; height: 38px; }
+  .brand-name strong, .brand-title { font-size: 16px; white-space: nowrap; }
+  .brand-season { font-size: 10.5px; }
+  .sync-stamp { font-size: 11px; padding: 4px 8px; }
+  .comp-trigger { height: 36px; padding: 0 10px; font-size: 12px; }
+  .comp-trigger svg { width: 15px; }
+  .icon-button { width: 36px; height: 36px; }
+
+  .page-section { padding: 20px 14px; gap: 16px; }
+  .section-heading h1, .team-title h1 { font-size: 32px; line-height: 1.06; }
+  .bench-heading h2 { font-size: 24px; }
+
+  /* Leaderboard row on mobile: compact tracks + tight gaps so 15-letter team names like Aguilas Dorados fit 100% */
+  .team-row,
+  .leaderboard-head { grid-template-columns: 30px minmax(0, 1fr) 22px 34px 46px; gap: 6px; padding: 8px 10px; min-height: 70px; }
+  .leaderboard-head { color: rgba(255, 255, 255, 0.75); }
+  .team-row .rank-badge { width: 28px; height: 32px; font-size: 13.5px; }
+  .team-row .row-team { gap: 7px; min-width: 0; }
+  .team-row .team-mark { width: 28px; height: 28px; flex-shrink: 0; }
+  .team-row .team-copy strong { font-size: 14.5px; line-height: 1.15; }
+  .team-row .team-copy small { font-size: 11px; line-height: 1.2; }
+  .team-row .rank-move { font-size: 10.5px; min-width: 20px; text-align: center; }
+  .team-row .gw-points { font-size: 13.5px; }
+  .team-row .total-points { font-size: 19px; }
+
+  .pitch { min-height: 0; }
+  .player-card { width: 76px; min-height: 112px; }
+  .stat-grid { gap: 6px; }
+  .points-summary-card { padding: 16px; }
+
+  /* No information-bearing text below 12px (§4.2). */
+  .position-tag { font-size: 12px; }
+  .player-bottom small { font-size: 12px; }
+  .player-compact .position-tag,
+  .player-compact .player-bottom small { font-size: 11px; }
+  .squad-row { min-height: 60px; }
+  .eyebrow { font-size: 12px; }
+}
+
+/* ---------------------------------------------------------------------------
+   PHASE 2 · 7. Border / shadow hierarchy (§4.4)
+   Passive surfaces drop the offset shadow; it is reserved for interactive
+   cards and the primary callout.
+   ------------------------------------------------------------------------- */
+.team-row, .stat-leader-card, .compact-list>button, .squad-row,
+.squad-table-head, .fixture-card, .h2h-card, .bracket, .bracket-match,
+.accordion-group, .search-wrap, .team-select-control, .empty-state {
+  box-shadow: none;
+}
+.team-row, .stat-leader-card, .compact-list>button,
+.fixture-card, .h2h-card, .accordion-group {
+  border-width: var(--border-hairline);
+}
+.bracket-match, .bracket, .empty-state { border-width: var(--border-hairline); }
+
+/* Interactive + callout keep the tactile brand character. */
+.team-row:hover, .team-row:focus-visible,
+.compact-list>button:hover, .compact-list>button:focus-visible { box-shadow: var(--shadow-interactive); }
+.points-summary-card, .cup-hero, .h2h-leader, .mover.best { box-shadow: var(--shadow-callout); }
+.bracket-final-match, .stat-leader-card.podium-card-1 { box-shadow: var(--shadow-callout); }
+
+/* Repeated rows use a divider instead of a card treatment. */
+.squad-row { border-top: var(--border-hairline) solid var(--border); }
+.squad-row:first-child { border-top: 0; }
+
+/* ---------------------------------------------------------------------------
+   PHASE 2 · 8. Compact mover strip + two-level scope bar
+   ------------------------------------------------------------------------- */
+.mover-strip { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 6px; }
+.mover-strip::-webkit-scrollbar { display: none; }
+.mover { flex: none; padding: 7px 11px; font-size: 12.5px; }
+/* Only the haul shows by default; the movers are revealed from 700px. */
+.mover.up, .mover.down { display: none; }
+@media (min-width: 700px) {
+  .mover.up, .mover.down { display: inline-flex; }
+  .mover-strip { flex-wrap: wrap; overflow: visible; }
+}
+
+/* Scope bar: on mobile it becomes two levels — row 1 is the current week +
+   stepper + Latest, row 2 a scrollable week rail — and scrolls away rather
+   than stacking under the header. Desktop keeps the single sticky row. */
+@media (max-width: 699px) {
+  .scope-bar { position: static; flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; background: var(--card); border-bottom: 2px solid var(--border); }
+  .scope-label { order: 0; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: var(--card-foreground); }
+  .scope-stepper { order: 1; margin-left: auto; }
+  .scope-latest { order: 2; margin-left: 8px; }
+  .scope-chips { order: 3; flex: 1 0 100%; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .scope-chips button { flex: 1 1 0; min-width: 38px; height: 34px; }
+  .scope-chips button.active { box-shadow: inset 0 0 0 2px var(--border); }
+}
+
+/* ---------------------------------------------------------------------------
+   PHASE 1 · 5. Phones (<= 480px, including 360px Samsung Galaxy A55)
+   Hide stamp and comps text so the topbar never wraps or overflows horizontally.
+   ------------------------------------------------------------------------- */
+@media (max-width: 480px) {
+  .sync-stamp, .comp-trigger span { display: none; }
+  .topbar { height: 68px; padding: 0 10px; gap: 6px; }
+  .brand-logo { width: 34px; height: 34px; }
+  .brand-name strong, .brand-title { font-size: 14.5px; }
+  .brand-season { font-size: 9.5px; }
+  .comp-trigger { height: 34px; padding: 0 8px; font-size: 11px; gap: 4px; }
+  .comp-trigger svg { width: 14px; }
+  .icon-button { width: 34px; height: 34px; }
+  .page-section { padding-left: 10px; padding-right: 10px; }
+}
+
+/* ---------------------------------------------------------------------------
+   PHASE 1 · 5. Ultra-narrow widths (320px) — checked by redesign-check.mjs
+   ------------------------------------------------------------------------- */
+@media (max-width: 359px) {
+  :root { --nav-h: 78px; }
+  .sync-stamp, .comp-trigger span { display: none; }
+  .topbar { height: 64px; padding: 0 8px; gap: 5px; }
+  .brand-logo { width: 32px; height: 32px; }
+  .brand-name strong, .brand-title { font-size: 13.5px; }
+  .brand-season { font-size: 9px; }
+  .comp-trigger { height: 32px; padding: 0 6px; font-size: 11px; }
+  .comp-trigger svg { width: 14px; }
+  .icon-button { width: 32px; height: 32px; }
+  .page-section { padding-left: 8px; padding-right: 8px; }
+  .team-row,
+  .leaderboard-head { grid-template-columns: 26px minmax(0, 1fr) 20px 32px 42px; gap: 4px; padding: 6px 8px; }
+  .team-row .team-mark { width: 24px; height: 24px; }
+  .team-row .team-copy strong { font-size: 13px; }
+  .team-row .rank-badge { width: 24px; height: 28px; font-size: 12.5px; }
+  .player-card { width: 68px; min-height: 100px; }
+  .player-card .player-photo-wrap { width: 34px; height: 30px; }
+  .player-compact { width: 58px; min-height: 84px; }
+  .rank-move { font-size: 10px; min-width: 20px; }
+}
+
+/* ---------------------------------------------------------------------------
+   PHASE 2 · 9. Squad — one heading row, horizontal summary
+   ------------------------------------------------------------------------- */
+.squad-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.squad-head-id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.squad-head-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.squad-head-copy h1 { font-size: 28px; line-height: 1.05; text-transform: uppercase; overflow-wrap: anywhere; }
+.squad-head-meta { font-size: 12.5px; font-weight: 700; color: var(--muted-foreground); }
+.team-select-compact { height: 40px; }
+.team-select-compact select { height: 40px; font-size: 14px; font-weight: 700; }
+.squad-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; border: var(--border-callout) solid var(--border); border-radius: 14px; background: var(--primary); color: var(--primary-foreground); box-shadow: var(--shadow-callout); }
+.squad-summary-main { display: flex; align-items: baseline; gap: 7px; }
+.squad-summary-main strong { font-family: var(--font-heading); font-size: 28px; line-height: 1; }
+.squad-summary-main span { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; opacity: .9; }
+.squad-summary-sub { font-size: 12.5px; font-weight: 700; opacity: .9; text-align: right; }
+
+/* ---------------------------------------------------------------------------
+   PHASE 2 · 10. Fixtures — one status treatment, tighter matchup
+   ------------------------------------------------------------------------- */
+.fixture-status svg { display: none; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--secondary); flex: none; }
+.fixture-status.is-final .status-dot { background: var(--primary-text); }
+.fixture-card { padding: 12px; gap: 10px; }
+.fixtures-list.grouped { padding: 8px; gap: 6px; }
+.fixtures-list.grouped .fixture-card { padding: 10px; }
+.club-mark { width: 30px; height: 30px; }
+.fixture-score { min-width: 76px; padding: 8px 10px; }
+.fixture-side strong { font-size: 14px; }
+.fixture-meta { font-size: 12px; }
+
+/* ---------------------------------------------------------------------------
+   PHASE 2 · extras — minimum 12px metadata, 44px hit areas (§4.3)
+   ------------------------------------------------------------------------- */
+.modal-close { width: 44px; height: 44px; }
+.search-clear { width: 32px; height: 32px; }
+.filter-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.filter-chips::-webkit-scrollbar { display: none; }
+.filter-chips button { flex: none; }
+
+/* Status is never colour alone: the dot is paired with text, and active nav
+   keeps the top indicator plus a heavier label. */
+.bottom-nav button.active span,
+.bottom-nav a.active span { font-weight: 800; }
