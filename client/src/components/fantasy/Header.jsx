@@ -26,6 +26,11 @@ export function Header({
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
+  // §4.1 — on narrow phones the stamp collapses to just its age. The full
+  // string stays in the DOM (visually hidden, still announced), so no state is
+  // lost and no accessible title is dropped.
+  const stampShort = stamp && (stamp.includes('·') ? stamp.slice(stamp.indexOf('·') + 1).trim() : stamp)
+
   useEffect(() => {
     if (!open) return
     const onDown = (e) => {
@@ -67,9 +72,10 @@ export function Header({
         {stamp && (
           <div
             className={cn('sync-stamp', stampStale && 'stale')}
-            title={stampStale ? 'Last sync looks out of date — the nightly job may have stopped' : undefined}
+            title={stampStale ? 'Last sync looks out of date — the nightly job may have stopped' : stamp}
           >
-            {stamp}
+            <span className="sync-stamp-full">{stamp}</span>
+            <span className="sync-stamp-short" aria-hidden="true">{stampShort}</span>
           </div>
         )}
 
@@ -80,9 +86,11 @@ export function Header({
               className="comp-trigger"
               aria-haspopup="menu"
               aria-expanded={open}
+              data-active={activeCompetition ? 'true' : undefined}
               onClick={() => setOpen((v) => !v)}
             >
               <Trophy aria-hidden="true" />
+              <span className="visually-hidden">Competitions</span>
               <span>Comps</span>
               <ChevronDown aria-hidden="true" className={open ? 'rotated' : ''} />
             </button>
@@ -97,6 +105,7 @@ export function Header({
                       type="button"
                       role="menuitem"
                       className={activeCompetition === id ? 'active' : ''}
+                      aria-current={activeCompetition === id ? 'true' : undefined}
                       onClick={() => {
                         onCompetition(id)
                         setOpen(false)

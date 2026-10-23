@@ -2,7 +2,7 @@ import 'dotenv/config'
 import { google } from 'googleapis'
 import { getGoogleAuth } from '../lib/auth.js'
 import { fetchTop5FixturesByDate } from './apiFootballSyncService.js'
-import { normalizeName, getSimilarityScore, cleanClubName } from './rosterValidator.js'
+import { normalizeName, getSimilarityScore, cleanClubName, isSameClub, CLUB_ALIASES } from './rosterValidator.js'
 import { SIMILARITY_THRESHOLDS } from '../lib/constants.js'
 
 const spreadsheetId = process.env.GOOGLE_SHEET_ID
@@ -160,9 +160,12 @@ export async function fetchTop5MatchesByDate(dateStr, gameweek = 2) {
 }
 
 function isClubMatch(nameA, nameB) {
-  const normA = normalizeName(nameA)
-  const normB = normalizeName(nameB)
-  if (!normA || !normB) return false
+  if (!nameA || !nameB) return false
+  if (isSameClub(nameA, nameB)) return true
+  const canonA = getCanonicalClubName(nameA)
+  const canonB = getCanonicalClubName(nameB)
+  const normA = normalizeName(canonA || nameA)
+  const normB = normalizeName(canonB || nameB)
   if (normA === normB) return true
   if (normA.includes(normB) || normB.includes(normA)) return true
   return getSimilarityScore(normA, normB) >= SIMILARITY_THRESHOLDS.ROSTER_MATCH
@@ -201,8 +204,15 @@ export const MASTER_TOP5_CLUBS = [
 export function getCanonicalClubName(raw) {
   if (!raw) return ''
   const str = cleanClubName(raw) || String(raw).trim()
-
   const norm = normalizeName(str)
+
+  // 1. Check authoritative CLUB_ALIASES
+  for (const [canonical, aliases] of Object.entries(CLUB_ALIASES)) {
+    if (norm === normalizeName(canonical) || aliases.some((a) => normalizeName(a) === norm)) {
+      return canonical
+    }
+  }
+
   let best = str
   let maxSim = 0
 
@@ -278,6 +288,7 @@ export async function upsertFixturesToSheet(newFixtures = [], apiFootballMatches
       if (sofaId && f.sofaId && f.sofaId === sofaId) return k
       if (afId && f.afId && f.afId === afId) return k
       if (f.gw === String(gw) && f.date === String(date)) {
+        if (isClubMatch(f.home, home) && isClubMatch(f.away, away)) return k
         const fHomeRoot = getClubRootToken(f.home)
         const fAwayRoot = getClubRootToken(f.away)
         if (fHomeRoot === homeRoot && fAwayRoot === awayRoot) return k

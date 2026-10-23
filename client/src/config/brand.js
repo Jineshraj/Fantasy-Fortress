@@ -17,9 +17,7 @@ export const BRAND = {
 // URL-encoded — browsers do this automatically, and Vite serves it fine).
 export const LOGO_SRC = '/Fantasy%20Fortress/Fantasy-fortress-logo.png'
 
-// The crest already reads well as a small square mark, so it doubles as the
-// tab / home-screen icon. No separate favicon asset needed.
-export const FAVICON_SRC = LOGO_SRC
+export const FAVICON_SRC = '/Fantasy-fortress-logo.png'
 
 // The crest carries its own "FANTASY FORTRESS" wordmark, so the header shows
 // the mark plus a season badge rather than repeating the full name.

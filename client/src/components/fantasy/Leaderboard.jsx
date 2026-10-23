@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Clock3, Search, TrendingDown, TrendingUp } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Clock3, Search } from 'lucide-react'
 import { TeamMark } from './TeamMark'
 import { EmptyState } from '@/components/ui/states'
 import { SearchBox } from '@/components/ui/SearchBox'
@@ -43,12 +43,22 @@ function useRanks(teams, gw) {
 }
 
 export function Leaderboard({ teams, latestGw, gw }) {
-  const [mode, setMode] = useState('overall')
   const [query, setQuery] = useState('')
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  // The week comes from the global ScopeBar — there is deliberately no second
-  // week control on this screen. It used to have its own, which could disagree
-  // with the app-wide one.
+  // The Overall/Gameweek toggle is URL-addressable (?view=overall|gw) so the
+  // app can tell whether the gameweek stepper belongs on this screen. The week
+  // itself still comes from the global ScopeBar — there is deliberately no
+  // second week control here.
+  const mode = searchParams.get('view') === 'gw' ? 'gw' : 'overall'
+  const setMode = (next) => {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'gw') params.set('view', 'gw')
+    else params.delete('view')
+    // replace: a view option, not history.
+    setSearchParams(params, { replace: true })
+  }
+
   const week = gw ?? latestGw ?? 1
 
   const { overall, weekly, overallRank, weeklyRank, movement } = useRanks(teams, week)
@@ -58,22 +68,6 @@ export function Leaderboard({ teams, latestGw, gw }) {
     !q || t.name.toLowerCase().includes(q) || (t.manager || '').toLowerCase().includes(q)
 
   const sorted = [...(mode === 'overall' ? overall : weekly)].filter(matches)
-
-  // Headline for the selected week. Three separate wrapping pills could eat
-  // two rows of a 360px screen, so this is one line on mobile and expands to
-  // the full set from 700px up.
-  const movers = useMemo(() => {
-    const played = teams.filter((t) => gwPoints(t, week) > 0)
-    if (played.length === 0) return null
-    const entries = played
-      .map((t) => ({ team: t, delta: movement.get(t.name) ?? 0, pts: gwPoints(t, week) }))
-      .filter((e) => e.delta !== 0)
-    const up = [...entries].sort((a, b) => b.delta - a.delta)[0]
-    const down = [...entries].sort((a, b) => a.delta - b.delta)[0]
-    const topTeam = [...played].sort((a, b) => gwPoints(b, week) - gwPoints(a, week))[0]
-    const best = topTeam ? { team: topTeam, delta: 0, pts: gwPoints(topTeam, week) } : null
-    return { up, down, best }
-  }, [teams, week, movement])
 
   const rankOf = (t) => (mode === 'overall' ? overallRank : weeklyRank).get(t.name)
 
@@ -107,28 +101,6 @@ export function Leaderboard({ teams, latestGw, gw }) {
           Gameweek
         </button>
       </div>
-
-      {movers && (
-        <div className="mover-strip" role="note" aria-label="Weekly highlights">
-          {/* Mobile shows only the haul; the rest of the detail is in the
-              per-row movement column. From 700px the full set is revealed. */}
-          <span className="mover best">
-            Biggest haul <strong className="numeric">{movers.best?.pts}</strong> · {movers.best?.team.name}
-          </span>
-          {movers.up && movers.up.delta > 0 && (
-            <span className="mover up">
-              <TrendingUp aria-hidden="true" />
-              <strong>{movers.up.team.name}</strong> up {movers.up.delta}
-            </span>
-          )}
-          {movers.down && movers.down.delta < 0 && (
-            <span className="mover down">
-              <TrendingDown aria-hidden="true" />
-              <strong>{movers.down.team.name}</strong> down {Math.abs(movers.down.delta)}
-            </span>
-          )}
-        </div>
-      )}
 
       <SearchBox
         value={query}

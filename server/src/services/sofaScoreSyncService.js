@@ -5,6 +5,11 @@ import { normalizeName, getSimilarityScore, cleanClubName, resolvePlayerDetails 
 import { SIMILARITY_THRESHOLDS } from '../lib/constants.js'
 import { getActiveGameweek } from './sheetsService.js'
 import { getCanonicalClubName } from './fixtureService.js'
+// The rule table lives in scoringRules.js so the dashboard's approved points,
+// the drift checker, and the persisted itemized ledger can never disagree.
+import { buildPointsBreakdownItems, calculatePlayerPoints } from './scoringRules.js'
+
+export { buildPointsBreakdownItems, calculatePlayerPoints }
 
 const spreadsheetId = process.env.GOOGLE_SHEET_ID
 const apiKey = process.env.RAPIDAPI_KEY
@@ -65,71 +70,10 @@ async function sofaFetch(url, label) {
 }
 
 /**
- * Calculates official fantasy fortress match points
+ * Calculates official fantasy fortress match points.
+ * Implementation lives in `scoringRules.js` and is re-exported from the top
+ * of this module so existing import paths keep working.
  */
-export function calculatePlayerPoints(stats, fantasyPos = 'MID') {
-  const pos = (fantasyPos || 'MID').toUpperCase()
-  const minutes = Number(stats.minutes || 0)
-  const goals = Number(stats.goals || 0)
-  const assists = Number(stats.assists || 0)
-  // Strictly parse boolean or string 'TRUE' — avoids Boolean('FALSE') === true trap
-  const cleanSheet = stats.clean_sheet === true || String(stats.clean_sheet || '').trim().toUpperCase() === 'TRUE'
-  const penMiss = Number(stats.pen_miss || 0)
-  const penSave = Number(stats.pen_save || 0)
-  const yellow = Number(stats.yellow || 0)
-  const red = Number(stats.red || 0)
-  const ownGoals = Number(stats.own_goals || 0)
-
-  let points = 0
-
-  // 1. Minutes Played
-  if (minutes >= 60) {
-    points += 2
-  } else if (minutes >= 1) {
-    points += 1
-  }
-
-  // 2. Goals by Position
-  if (pos === 'GKP' || pos === 'GK') {
-    points += goals * 10
-  } else if (pos === 'DEF') {
-    points += goals * 6
-  } else if (pos === 'MID') {
-    points += goals * 5
-  } else {
-    // FWD
-    points += goals * 4
-  }
-
-  // 3. Assists
-  if (pos === 'GKP' || pos === 'GK') {
-    points += assists * 5
-  } else {
-    points += assists * 3
-  }
-
-  // 4. Clean Sheet (60+ mins on pitch)
-  if (cleanSheet && minutes >= 60) {
-    if (pos === 'GKP' || pos === 'GK') points += 5
-    else if (pos === 'DEF') points += 4
-  }
-
-  // 5. Penalties
-  points += penSave * 5
-  points -= penMiss * 3
-
-  // 6. Cards & Own Goals
-  points -= yellow * 1
-  points -= red * 3
-  points -= ownGoals * 2
-
-  // 7. Hat-trick Bonus (+3 if 3+ goals OR 3+ assists)
-  if (goals >= 3 || assists >= 3) {
-    points += 3
-  }
-
-  return points
-}
 
 /**
  * Fetches match lineups from SofaScore RapidAPI

@@ -5,6 +5,7 @@ import { normalizeName, getSimilarityScore, isSameClub } from './rosterValidator
 import { SIMILARITY_THRESHOLDS } from '../lib/constants.js'
 import { resolveExactTabName, getActiveGameweek } from './sheetsService.js'
 import { syncStadiumPoints, matchHomeClub } from './stadiumService.js'
+import { buildPointsBreakdown, buildMatchBreakdown } from './scoringRules.js'
 
 const spreadsheetId = process.env.GOOGLE_SHEET_ID || '1smqnbGD0chXTYLRepUrmiQePc5zuMdQu4AFaASZZRcU'
 
@@ -53,7 +54,7 @@ export function getGwColumnRange(targetGw) {
   const endColIdx = startColIdx + 5
   const startCol = getColumnLetters(startColIdx)
   const endCol = getColumnLetters(endColIdx)
-  return `${startCol}1:${endCol}18`
+  return `${startCol}1:${endCol}19`
 }
 
 /**
@@ -238,6 +239,9 @@ export async function calculateAndSyncTeamScores(targetGw) {
   const fixtureRowsEarly = (fixtureRes.data.values || []).filter((r) => String(r[0] || '').trim() === String(targetGw))
 
   // Map: match_id -> { homeClub (normalized), awayClub (normalized), status }
+  // Also carries the canonical `fixtures.match_id` used by the browser (see
+  // supabaseSyncService: `sofaId || afId || gw_home_away`) so per-fixture
+  // player rows can be joined to the client's fixture list by id.
   const matchInfoById = new Map()
   const homeClubsAtHome = new Set()
   const finishedClubs = new Set()
@@ -250,7 +254,16 @@ export async function calculateAndSyncTeamScores(targetGw) {
     const fStatus = String(f[7] || '').trim().toUpperCase()
     const fHomeNorm = normalizeName(fHomeRaw)
     const fAwayNorm = normalizeName(fAwayRaw)
-    const fixture = { home: fHomeNorm, away: fAwayNorm, homeRaw: fHomeRaw, awayRaw: fAwayRaw, status: fStatus }
+    const fixture = {
+      home: fHomeNorm,
+      away: fAwayNorm,
+      homeRaw: fHomeRaw,
+      awayRaw: fAwayRaw,
+      status: fStatus,
+      fixtureId: fSofaId || fAfId || `${targetGw}_${fHomeRaw}_${fAwayRaw}`,
+      homeScore: f[8] !== undefined && f[8] !== '' ? Number(f[8]) : null,
+      awayScore: f[9] !== undefined && f[9] !== '' ? Number(f[9]) : null,
+    }
     if (fSofaId) matchInfoById.set(`sofa:${fSofaId}`, fixture)
     if (fAfId) matchInfoById.set(`af:${fAfId}`, fixture)
 
@@ -346,6 +359,48 @@ export async function calculateAndSyncTeamScores(targetGw) {
     return best
   }
 
+  // ── Per-fixture records for `match_breakdown` (uiux-improvements.md §3.1) ──
+  // Staging is already one row per (player, match); the aggregate maps below
+  // flatten them for scoring. These helpers keep a side-channel copy so a
+  // Double Gameweek can be shown fixture-by-fixture instead of guessing a
+  // split from a single aggregate row.
+  function buildMatchRec(source, matchId, club, ev) {
+    const fixture = matchInfoById.get(`sofa:${matchId}`) || matchInfoById.get(`af:${matchId}`)
+    if (!fixture || !fixture.fixtureId) return null
+    const venue = matchHomeClub(club, fixture.homeRaw)
+      ? 'home'
+      : matchHomeClub(club, fixture.awayRaw)
+        ? 'away'
+        : null
+    return {
+      source,
+      fixtureId: fixture.fixtureId,
+      venue,
+      opponentName: venue === 'home' ? fixture.awayRaw : venue === 'away' ? fixture.homeRaw : null,
+      homeScore: fixture.homeScore ?? null,
+      awayScore: fixture.awayScore ?? null,
+      status: fixture.status || 'UNKNOWN',
+      minutes: ev.minutes,
+      goals: ev.goals,
+      assists: ev.assists,
+      isCS: ev.isCS,
+      penMiss: ev.penMiss,
+      penSave: ev.penSave,
+      yellow: ev.yellow,
+      red: ev.red,
+      ownGoals: ev.ownGoals,
+      pts: ev.pts,
+    }
+  }
+
+  function pushMatchRec(map, pName, rec) {
+    const entry = map.get(pName)
+    if (!rec || !entry) return
+    if (!Array.isArray(entry.matches)) entry.matches = []
+    if (entry.matches.some((m) => m.fixtureId === rec.fixtureId && m.source === rec.source)) return
+    entry.matches.push(rec)
+  }
+
   // 1. SofaScore Staging Events
   const sofaStatsMap = new Map()
   try {
@@ -384,6 +439,10 @@ export async function calculateAndSyncTeamScores(targetGw) {
         const homeOwnGoals = isHomeMatch ? ownGoals : 0
         const homePenMiss = isHomeMatch ? penMiss : 0
 
+        const sofaMatchRec = buildMatchRec('sofa', matchId, club, {
+          minutes, goals, assists, isCS, penMiss, penSave, yellow, red, ownGoals, pts,
+        })
+
         if (sofaStatsMap.has(pName)) {
           const existing = sofaStatsMap.get(pName)
           existing.minutes += minutes
@@ -411,6 +470,7 @@ export async function calculateAndSyncTeamScores(targetGw) {
             homeGoals, homeAssists, homeCS, homePenSave, homeYellow, homeRed, homeOwnGoals, homePenMiss
           })
         }
+        pushMatchRec(sofaStatsMap, pName, sofaMatchRec)
       }
     })
   } catch (e) {
@@ -450,6 +510,10 @@ export async function calculateAndSyncTeamScores(targetGw) {
         const homeOwnGoals = isHomeMatch ? ownGoals : 0
         const homePenMiss = isHomeMatch ? penMiss : 0
 
+        const afMatchRec = buildMatchRec('af', matchId, club, {
+          minutes, goals, assists, isCS, penMiss, penSave, yellow, red, ownGoals, pts,
+        })
+
         if (afStatsMap.has(pName)) {
           const existing = afStatsMap.get(pName)
           existing.minutes += minutes
@@ -477,6 +541,7 @@ export async function calculateAndSyncTeamScores(targetGw) {
             homeGoals, homeAssists, homeCS, homePenSave, homeYellow, homeRed, homeOwnGoals, homePenMiss
           })
         }
+        pushMatchRec(afStatsMap, pName, afMatchRec)
       }
     })
   } catch (e) {
@@ -569,7 +634,7 @@ export async function calculateAndSyncTeamScores(targetGw) {
     } else {
       chosenDetail = sofaDetail || afDetail || {
         minutes: 0, goals: 0, assists: 0, isCS: false, penMiss: 0, penSave: 0,
-        yellow: 0, red: 0, ownGoals: 0, club: pData.club, pts: 0,
+        yellow: 0, red: 0, ownGoals: 0, club: pData.club, pts: 0, matches: [],
         homeGoals: 0, homeAssists: 0, homeCS: false, homePenSave: 0,
         homeYellow: 0, homeRed: 0, homeOwnGoals: 0, homePenMiss: 0
       }
@@ -586,6 +651,33 @@ export async function calculateAndSyncTeamScores(targetGw) {
   // already loaded above (before the staging row aggregation) — see FIXTURE
   // LOADING block. Only the stadium sync happens here.
   const { stadiumPointsMap, teamHomeClubMap } = await syncStadiumPoints(targetGw)
+
+  // Load existing penalties for this targetGw from each team's sheet tab (Row 18 / PENALTY row)
+  const existingPenaltiesMap = new Map()
+  try {
+    const allTabNames = Array.from(teamRosters.keys()).map((t) => resolveExactTabName(t)).filter(Boolean)
+    const penaltyRanges = allTabNames.map((tab) => `'${tab}'!${getGwColumnRange(targetGw)}`)
+    const penaltyRes = await sheets.spreadsheets.values.batchGet({
+      spreadsheetId,
+      ranges: penaltyRanges,
+    })
+    for (let i = 0; i < allTabNames.length; i++) {
+      const tab = allTabNames[i]
+      const rows = penaltyRes.data.valueRanges[i]?.values || []
+      let penalty = 0
+      for (const r of rows) {
+        const col0 = String(r[0] || '').trim().toLowerCase()
+        const col1 = String(r[1] || '').trim().toUpperCase()
+        if (col1 === 'PENALTY' || col0.includes('penalty') || col0.includes('deduction')) {
+          const val = Number(r[5] || 0)
+          if (!isNaN(val)) penalty = val
+        }
+      }
+      existingPenaltiesMap.set(tab.toLowerCase(), penalty)
+    }
+  } catch (err) {
+    console.warn('[Penalty Detection] Could not load prior penalty rows:', err.message)
+  }
 
   // 3. Process Each Team's Scores (Captain 2x, Vice, Auto-Subs, Stadium Bonus)
   console.log('\n[3/5] Calculating team totals with Captain 2x, Auto-Subs & Stadium Bonuses...')
@@ -869,7 +961,10 @@ export async function calculateAndSyncTeamScores(targetGw) {
       }
     }
 
-    let totalTeamPoints = teamStadiumBonus
+    const resolvedTabEarly = resolveExactTabName(teamName) || teamName
+    const rawPenaltyVal = existingPenaltiesMap.get((resolvedTabEarly || '').toLowerCase()) || existingPenaltiesMap.get(teamName.toLowerCase()) || 0
+    const teamPenalty = rawPenaltyVal !== 0 ? Math.abs(rawPenaltyVal) : 0
+    let totalTeamPoints = teamStadiumBonus - teamPenalty
     const scoredPlayers = []
 
     // Calculate Starters Points (Effective Starters + Auto-Subbed In Bench)
@@ -947,6 +1042,14 @@ export async function calculateAndSyncTeamScores(targetGw) {
         penSave: Number(detail.penSave || 0),
         played: detail.minutes > 0 || pData.pts > 0,
         isEffectiveStarter: true,
+        // Itemized ledger for the player modal (uiux-improvements.md §3.1).
+        // `available:false` when the items do not reconcile exactly with the
+        // approved base total — the client then shows "Breakdown pending"
+        // instead of a fabricated explanation. `final_pts` stays authoritative.
+        points_breakdown: buildPointsBreakdown(detail, p.position, pData.pts),
+        // Per-fixture split (null unless staging actually had one row per
+        // fixture) — see uiux-improvements.md §3.1 DGW interaction.
+        match_breakdown: buildMatchBreakdown(detail, { position: p.position, gameweek: targetGw }),
       })
     }
 
@@ -977,6 +1080,10 @@ export async function calculateAndSyncTeamScores(targetGw) {
         penSave: Number(detail.penSave || 0),
         played: detail.minutes > 0 || pData.pts > 0,
         isEffectiveStarter: false,
+        // Bench/subbed rows keep their real base points and events so the
+        // modal can still explain them, even though final_pts is 0.
+        points_breakdown: buildPointsBreakdown(detail, p.position, pData.pts),
+        match_breakdown: buildMatchBreakdown(detail, { position: p.position, gameweek: targetGw }),
       })
     }
 
@@ -988,10 +1095,11 @@ export async function calculateAndSyncTeamScores(targetGw) {
       stadium_name: stadiumInfo.stadium,
       stadium_bonus: teamStadiumBonus,
       stadium_label: stadiumResultLabel,
+      penalty: teamPenalty,
       players: scoredPlayers,
     })
 
-    console.log(`- ${teamName}: GW${targetGw} Total = ${totalTeamPoints} pts (Captain: ${effectiveCaptainName}, Stadium: ${stadiumInfo.stadium} [${teamStadiumBonus} pts])`)
+    console.log(`- ${teamName}: GW${targetGw} Total = ${totalTeamPoints} pts (Captain: ${effectiveCaptainName}, Stadium: ${stadiumInfo.stadium} [${teamStadiumBonus} pts]${teamPenalty > 0 ? `, Penalty: -${teamPenalty} pts` : ''})`)
   }
 
   // 4. Update Each Team's Tab & Generate Standings using Single Atomic Batch Write
@@ -1146,10 +1254,12 @@ export async function calculateAndSyncTeamScores(targetGw) {
     }
 
     const teamStadiumBonus = Number(teamData.stadium_bonus || 0)
-    const finalTeamTotal = totalPlayerFinalPts + teamStadiumBonus
+    const teamPenalty = Number(teamData.penalty || 0)
+    const finalTeamTotal = totalPlayerFinalPts + teamStadiumBonus - teamPenalty
     const stadiumName = teamData.stadium_name || 'STADIUM'
 
     gwBlockRows.push([stadiumName, 'STADIUM', '', 0, 0, teamStadiumBonus])
+    gwBlockRows.push(['Penalty / Deduction', 'PENALTY', '', 0, 0, teamPenalty > 0 ? -teamPenalty : 0])
     gwBlockRows.push([`GW${targetGw} Team Total`, '', '', totalPlayerBasePts, totalPlayerStadiumBonus, finalTeamTotal])
 
     // Push GW Snapshot range dynamically (GW1 -> J1:O18, GW2 -> P1:U18, GW3 -> V1:AA18, etc.)

@@ -72,11 +72,16 @@ const stampFrom = (updatedAt, latestGw) => {
 }
 
 export function FantasyApp() {
-  // Returning visitors skip the gate. The code is already public in the bundle,
-  // so this adds no security — real auth replaces the whole mechanism.
-  const [stage, setStage] = useState(() =>
-    typeof window !== 'undefined' && getStored(KEYS.unlocked) === '1' ? 'splash' : 'access'
-  )
+  // Returning visitors skip the gate. The ?lock or ?reset param allows returning to the gate.
+  const [stage, setStage] = useState(() => {
+    if (typeof window === 'undefined') return 'access'
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('lock') || params.has('reset')) {
+      try { window.localStorage.removeItem(KEYS.unlocked) } catch {}
+      return 'access'
+    }
+    return getStored(KEYS.unlocked) === '1' ? 'splash' : 'access'
+  })
   const [boot, setBoot] = useState({
     status: 'idle',
     data: null,
@@ -240,6 +245,15 @@ export function FantasyApp() {
   const activeCompetition = COMPETITION_ID[location.pathname] ?? null
   const isCompetition = activeCompetition !== null
 
+  // Contextual visibility (uiux-improvements.md Item 3): the stepper only
+  // appears where the screen is actually gameweek-scoped. Competitions own
+  // their stage week; /table in Overall mode shows only its "through GW N"
+  // metadata. `visible` unmounts the bar — it is never hidden with CSS.
+  const isTable = location.pathname === ROUTES.table
+  const tableMode = searchParams.get('view') === 'gw' ? 'gw' : 'overall'
+  const onTeamPage = location.pathname.startsWith('/team/')
+  const gwBarVisible = !isCompetition && !onTeamPage && (!isTable || tableMode === 'gw')
+
   // Keep the week when switching primary tabs, so tapping "Squad" from a
   // shared /table?gw=3 link lands on /squad?gw=3.
   const withGw = (to) => (searchParams.get('gw') ? `${to}?gw=${searchParams.get('gw')}` : to)
@@ -248,8 +262,7 @@ export function FantasyApp() {
     <main className="app-shell">
       <ScrollRestoration />
       <Header
-        stamp={stamp?.text}
-        stampStale={stamp?.stale}
+        stamp={null}
         onRefresh={runRefresh}
         refreshing={refreshing}
         competitions={COMPETITIONS}
@@ -257,16 +270,13 @@ export function FantasyApp() {
         onCompetition={(id) => navigate(id === 'h2h' ? ROUTES.h2h : ROUTES.cup)}
       />
 
-      {/* Hidden on competitions: bracket stages are pinned to their own
-          gameweeks, so a global week control there would do nothing. */}
-      {!isCompetition && (
-        <ScopeBar
-          gw={gw}
-          latestGw={latestGw}
-          onChange={setGw}
-          gameweeks={Array.from({ length: latestGw }, (_, i) => i + 1)}
-        />
-      )}
+      <ScopeBar
+        visible={gwBarVisible}
+        gw={gw}
+        latestGw={latestGw}
+        onChange={setGw}
+        gameweeks={Array.from({ length: latestGw }, (_, i) => i + 1)}
+      />
 
       <div className="app-content">
         <ErrorBoundary resetKey={location.pathname}>
@@ -281,7 +291,17 @@ export function FantasyApp() {
             <Route path={ROUTES.stats} element={<StatsLeaders gw={gw} />} />
             <Route path={ROUTES.h2h} element={<H2H />} />
             <Route path={ROUTES.cup} element={<SuperCup />} />
-            <Route path="/team/:slug" element={<TeamRoute teams={teams} gw={gw} />} />
+            <Route
+              path="/team/:slug"
+              element={
+                <TeamRoute
+                  teams={teams}
+                  gw={gw}
+                  latestGw={latestGw}
+                  onGwChange={setGw}
+                />
+              }
+            />
             {/* Unknown or stale link (renamed team, hand-typed path) */}
             <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
           </Routes>
@@ -314,9 +334,9 @@ export function FantasyApp() {
 // Resolves /team/:slug to a real team. A slug that no longer matches any team
 // (renamed franchise, stale shared link) redirects to the table rather than
 // rendering an empty screen.
-function TeamRoute({ teams, gw }) {
+function TeamRoute({ teams, gw, latestGw, onGwChange }) {
   const { slug } = useParams()
   const team = findTeamBySlug(teams, slug)
   if (!team) return <Navigate to={DEFAULT_ROUTE} replace />
-  return <TeamView team={team} gw={gw} />
+  return <TeamView team={team} gw={gw} latestGw={latestGw} onGwChange={onGwChange} />
 }

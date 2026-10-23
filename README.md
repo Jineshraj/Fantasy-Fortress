@@ -36,8 +36,8 @@ A next-generation fantasy football tournament platform featuring automated dual-
 
 ### 1. Clone & Install Dependencies
 ```bash
-# Install root, client, and server dependencies
-npm install
+# Install client and server dependencies
+# (the root package only provides convenience scripts)
 npm --prefix client install
 npm --prefix server install
 ```

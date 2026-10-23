@@ -23,8 +23,8 @@ const write = (key, value) => {
 export const getStored = (key) => read(key)
 export const setStored = (key, value) => write(key, value)
 
-// Keys are namespaced so they can't collide with anything else on the origin.
 export const KEYS = {
   unlocked: 'ff:unlocked',
   lastTeam: 'ff:last-team',
+  role: 'ff:role',
 }

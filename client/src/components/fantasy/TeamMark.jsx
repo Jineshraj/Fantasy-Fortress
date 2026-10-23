@@ -18,7 +18,7 @@ export function TeamMark({ name, size = 32 }) {
       className="team-mark"
       imgClassName="team-logo"
       style={{ width: size, height: size }}
-      fallback={<span className="avatar">{initials(name)}</span>}
+      fallback={<span className="team-avatar">{initials(name)}</span>}
     />
   )
 }

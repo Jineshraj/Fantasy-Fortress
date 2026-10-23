@@ -43,6 +43,7 @@ export async function formatTeamWhatsAppPoints(teamName, targetGw = 1) {
   // Parse player rows from the Team tab (any row before Stadium / Total)
   const tabPlayersMap = new Map()
   let stadiumBonusFromTab = 0
+  let penaltyFromTab = 0
 
   for (const r of rows.slice(1)) {
     if (!r || !r[0]) continue
@@ -50,6 +51,12 @@ export async function formatTeamWhatsAppPoints(teamName, targetGw = 1) {
     const col1 = String(r[1] || '').trim()
 
     if (col0.toLowerCase().includes('total') || col1.toLowerCase().includes('total')) {
+      continue
+    }
+
+    if (col1.toUpperCase() === 'PENALTY' || col0.toLowerCase().includes('penalty')) {
+      const pVal = r[5] !== undefined && r[5] !== '' ? r[5] : 0
+      penaltyFromTab = Number(pVal) || 0
       continue
     }
 
@@ -133,11 +140,11 @@ export async function formatTeamWhatsAppPoints(teamName, targetGw = 1) {
     }
   }
 
-  // Compute Total Team Points (Sum of active starters + Auto-Sub IN + Stadium Bonus)
+  // Compute Total Team Points (Sum of active starters + Auto-Sub IN + Stadium Bonus + Penalty)
   let computedTotal = 0
   starters.forEach(p => { if (!p.isSubbedOut) computedTotal += p.finalPts })
   bench.forEach(p => { if (p.isSubbedIn) computedTotal += p.finalPts })
-  computedTotal += stadiumBonusFromTab
+  computedTotal += stadiumBonusFromTab + penaltyFromTab
 
   const totalPts = String(computedTotal)
 
@@ -176,6 +183,9 @@ export async function formatTeamWhatsAppPoints(teamName, targetGw = 1) {
   let message = `🏅 *FANTASY FORTRESS - S2*\n\n`
   message += `📋 *Team Name :* ${resolvedTab}\n`
   message += `🏟️ *Stadium :* ${stadiumInfo.stadium} ${stadiumBonusFromTab}\n`
+  if (penaltyFromTab !== 0) {
+    message += `⚠️ *Penalty :* ${penaltyFromTab}\n`
+  }
   message += `📢 *GW :* ${targetGw}\n`
   message += `📜 *Formation :* ${formation}\n\n`
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, TriangleAlert, UserSearch } from 'lucide-react'
-import { fetchTeamSquad } from '@/data/live'
+import { ChevronDown, Settings2, TriangleAlert, UserSearch } from 'lucide-react'
+import { fetchGameweekStatus, fetchTeamSquad } from '@/data/live'
 import { PlayerPhoto } from './Imagery'
 import { TeamMark } from './TeamMark'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
@@ -12,12 +12,12 @@ const normPos = (pos) => (pos === 'GK' ? 'GKP' : pos)
 
 /**
  * Squad view. There is no per-manager identity in the app yet (login IDs are
- * still to come), so the team is chosen explicitly via a dropdown and the
- * heading says Squad rather than "My team".
+ * still to come), so the team is chosen explicitly via a compact switcher and
+ * the heading says Squad rather than "My team".
  *
- * Two different totals are shown because they are genuinely different numbers:
- *   - Squad total  — this week's 15 players combined
- *   - Season total — the manager's cumulative league points (from Standings)
+ * The hero reports the *effective XI* total written by the scoring engine —
+ * never a 15-player sum built in JSX. Bench points stay visible in the player
+ * detail but never inflate the headline.
  */
 export function Squad({ teams, gw }) {
   const [openGroup, setOpenGroup] = useState('GKP')
@@ -26,12 +26,16 @@ export function Squad({ teams, gw }) {
   // at, instead of defaulting to whoever is top of the standings.
   const [picked, setPicked] = useState(() => getStored(KEYS.lastTeam))
   const [state, setState] = useState({ status: 'idle', squad: null, error: null })
+  const [statusText, setStatusText] = useState(null)
 
   const teamOptions = useMemo(() => teams.map((t) => t.name), [teams])
   // Guard against a remembered team that no longer exists (renamed franchise).
   const remembered = picked && teamOptions.includes(picked) ? picked : null
   const activeTeam = remembered ?? teamOptions[0] ?? null
   const activeMeta = useMemo(() => teams.find((t) => t.name === activeTeam) ?? null, [teams, activeTeam])
+  // No authentication yet — the switcher stays behind a capability flag so the
+  // header never renders a second full-width title on mobile.
+  const canSwitchTeams = teamOptions.length > 1
   const q = query.trim().toLowerCase()
 
   const load = useCallback(() => {
@@ -52,16 +56,23 @@ export function Squad({ teams, gw }) {
     load()
   }, [load])
 
+  // Exactly one status pill; null means "not available" and the pill is omitted
+  // rather than showing a fabricated zero.
+  useEffect(() => {
+    let alive = true
+    fetchGameweekStatus(gw)
+      .then((text) => alive && setStatusText(text))
+      .catch(() => alive && setStatusText(null))
+    return () => {
+      alive = false
+    }
+  }, [gw])
+
   const squad = useMemo(() => {
     if (!state.squad) return []
     const norm = (p) => ({ ...p, pos: normPos(p.pos) })
     return [...state.squad.starters.map(norm), ...state.squad.bench.map(norm)]
   }, [state.squad])
-
-  const squadTotal = useMemo(
-    () => squad.reduce((sum, p) => sum + (p.points || 0), 0),
-    [squad]
-  )
 
   const visibleGroups = useMemo(() => {
     const out = []
@@ -76,33 +87,26 @@ export function Squad({ teams, gw }) {
     return out
   }, [squad, q])
 
-  const totalPlayers = squad.length
   const noSearchMatch = !!q && visibleGroups.length === 0
+  const totals = state.squad?.totals ?? null
+  const gwPoints = totals?.gw ?? 0
+  const seasonTotal = activeMeta?.total ?? totals?.season ?? 0
+  const rank = activeMeta?.rank ?? null
 
   return (
     <section className="page-section">
-      {/* Heading row carries crest + team name; the selector is a compact
-          affordance on the same row rather than a second page header. */}
-      <div className="squad-head">
-        <div className="squad-head-id">
-          {activeTeam && <TeamMark name={activeTeam} size={40} />}
-          <div className="squad-head-copy">
-            <p className="eyebrow">Squad · Gameweek {gw}</p>
-            <h1>{activeTeam || 'Squad'}</h1>
-            {activeMeta && (
-              <small className="squad-head-meta">
-                Rank #{activeMeta.rank} · {activeMeta.total} pts overall
-              </small>
-            )}
-          </div>
+      {/* Two fixed rows: context/actions on top, identity below. The title is a
+          single line that truncates — it never wraps into a cramped block. */}
+      <header className="squad-head">
+        <div className="squad-context">
+          <p className="eyebrow">Squad · Gameweek {gw}</p>
         </div>
 
-        {teamOptions.length > 1 && (
-          <label className="team-select" htmlFor="squad-team">
-            <span className="visually-hidden">Choose a team</span>
-            <span className="team-select-control team-select-compact">
+        <div className="squad-actions">
+          {canSwitchTeams && (
+            <label className="team-switcher">
+              <span className="visually-hidden">Choose a team</span>
               <select
-                id="squad-team"
                 value={activeTeam ?? ''}
                 aria-label="Choose a team"
                 onChange={(e) => {
@@ -116,23 +120,49 @@ export function Squad({ teams, gw }) {
                   </option>
                 ))}
               </select>
-              <ChevronDown aria-hidden="true" className="select-caret" />
-            </span>
-          </label>
-        )}
-      </div>
+              <Settings2 aria-hidden="true" />
+            </label>
+          )}
+        </div>
 
-      {state.status === 'ready' && (
-        <div className="squad-summary">
-          <div className="squad-summary-main">
-            <strong className="numeric">{squadTotal}</strong>
-            <span>squad total · this week</span>
-          </div>
-          <div className="squad-summary-sub">
-            <span className="numeric">{activeMeta?.total ?? 0}</span> season total ·{' '}
-            <span className="numeric">{totalPlayers}</span> players
+        <div className="squad-identity">
+          {activeTeam && <TeamMark name={activeTeam} size={48} />}
+          <div className="squad-identity-copy">
+            <h1 title={activeTeam || undefined}>{activeTeam || 'Squad'}</h1>
+            <p className="squad-identity-meta">
+              Rank #{rank ?? '–'} · {activeMeta?.manager || 'Manager unavailable'}
+            </p>
           </div>
         </div>
+      </header>
+
+      {state.status === 'ready' && totals && (
+        <section className="points-summary ff-scorecard" aria-label={`Gameweek ${gw} score`}>
+          <div className="points-summary-primary">
+            <span className="eyebrow">Gameweek {gw} points</span>
+            <strong className="points-summary-score numeric">
+              {gwPoints}
+              <small> pts</small>
+            </strong>
+            <span className="points-summary-label">Effective XI total</span>
+          </div>
+          <div className="points-summary-metrics">
+            <div>
+              <span>Season rank</span>
+              <strong className="numeric">#{rank ?? '–'}</strong>
+            </div>
+            <div>
+              <span>Season total</span>
+              <strong className="numeric">{seasonTotal} pts</strong>
+            </div>
+          </div>
+          <div className="points-summary-status">
+            <span className="badge-live">
+              {totals.playedCount}/{totals.startingSlots} Played
+            </span>
+            {statusText && <span className="scorecard-delta">{statusText}</span>}
+          </div>
+        </section>
       )}
 
       {state.status === 'loading' && <LoadingBlock label="Loading squad" rows={5} />}

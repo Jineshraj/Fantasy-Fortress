@@ -5,6 +5,34 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase.js'
 import { TEAM_STADIUM_MAP } from './scoringEngine.js'
 import { normalizeName } from './rosterValidator.js'
 
+async function upsertInChunks(table, rows, onConflict, chunkSize = 50) {
+  for (let i = 0; i < rows.length; i += chunkSize) {
+    const chunk = rows.slice(i, i + chunkSize)
+    let attempts = 3
+    let lastErr = null
+    while (attempts > 0) {
+      try {
+        const { error } = await supabase.from(table).upsert(chunk, { onConflict })
+        if (error) {
+          lastErr = error
+          attempts--
+          if (attempts > 0) await new Promise((r) => setTimeout(r, 1000))
+        } else {
+          lastErr = null
+          break
+        }
+      } catch (err) {
+        lastErr = err
+        attempts--
+        if (attempts > 0) await new Promise((r) => setTimeout(r, 1000))
+      }
+    }
+    if (lastErr) {
+      console.warn(`[Supabase] ${table} Upsert Warning (chunk ${Math.floor(i / chunkSize) + 1}):`, lastErr.message || lastErr)
+    }
+  }
+}
+
 /**
  * Synchronizes Google Sheets verified data into Supabase PostgreSQL
  * @param {number} targetGw - Target Gameweek
@@ -127,11 +155,7 @@ export async function syncAllToSupabase(targetGw, teamResults = null) {
         }
 
         if (toUpdate.length > 0) {
-          for (let i = 0; i < toUpdate.length; i += 500) {
-            const batch = toUpdate.slice(i, i + 500)
-            const { error: updErr } = await supabase.from('players').upsert(batch, { onConflict: 'id' })
-            if (updErr) console.warn('[Supabase] Players Update Warning:', updErr.message)
-          }
+          await upsertInChunks('players', toUpdate, 'id', 100)
         }
 
         console.log(`✅ Synced ${playerRows.length} Master Players (${toInsert.length} new, ${toUpdate.length} updated).`)
@@ -201,10 +225,21 @@ export async function syncAllToSupabase(targetGw, teamResults = null) {
       }
     }).filter((p) => p.team_name && p.player_name)
 
-    if (lineupUpserts.length > 0) {
-      const { error: lineErr } = await supabase.from('lineups').upsert(lineupUpserts, { onConflict: 'team_name,gameweek,player_name' })
-      if (lineErr) console.warn('[Supabase] Lineups Upsert Warning:', lineErr.message)
-      else console.log(`✅ Synced ${lineupUpserts.length} GW${targetGw} Lineups.`)
+    // Deduplicate by (team_name, gameweek, player_name) to avoid Postgres "ON CONFLICT DO UPDATE command cannot affect row a second time"
+    const lineupMap = new Map()
+    for (const item of lineupUpserts) {
+      const key = `${item.team_name.toLowerCase()}|${item.gameweek}|${item.player_name.toLowerCase()}`
+      if (lineupMap.has(key)) {
+        const existing = lineupMap.get(key)
+        if (existing.role === 'STARTER') continue // Prefer STARTER over BENCH
+      }
+      lineupMap.set(key, item)
+    }
+    const dedupedLineupUpserts = Array.from(lineupMap.values())
+
+    if (dedupedLineupUpserts.length > 0) {
+      await upsertInChunks('lineups', dedupedLineupUpserts, 'team_name,gameweek,player_name', 50)
+      console.log(`✅ Synced ${dedupedLineupUpserts.length} GW${targetGw} Lineups.`)
     }
 
     // 5. Sync Fixtures (fixtures table) — Exact Column Mapping (Fixes CRIT-09)
@@ -241,10 +276,16 @@ export async function syncAllToSupabase(targetGw, teamResults = null) {
       }
     }).filter((f) => f.home_team && f.away_team)
 
-    if (fixtureUpserts.length > 0) {
-      const { error: fixErr } = await supabase.from('fixtures').upsert(fixtureUpserts, { onConflict: 'gameweek,match_id,home_team,away_team' })
-      if (fixErr) console.warn('[Supabase] Fixtures Upsert Warning:', fixErr.message)
-      else console.log(`✅ Synced ${fixtureUpserts.length} GW${targetGw} Fixtures.`)
+    const fixMap = new Map()
+    for (const f of fixtureUpserts) {
+      const key = `${f.gameweek}|${f.match_id}|${f.home_team.toLowerCase()}|${f.away_team.toLowerCase()}`
+      fixMap.set(key, f)
+    }
+    const dedupedFixtures = Array.from(fixMap.values())
+
+    if (dedupedFixtures.length > 0) {
+      await upsertInChunks('fixtures', dedupedFixtures, 'gameweek,match_id,home_team,away_team', 50)
+      console.log(`✅ Synced ${dedupedFixtures.length} GW${targetGw} Fixtures.`)
     }
 
     // 6. Sync Player Gameweek Points & Breakdown (player_gameweek_stats) (Fixes CRIT-08)
@@ -252,6 +293,13 @@ export async function syncAllToSupabase(targetGw, teamResults = null) {
       console.log(`[6/7] Syncing GW${targetGw} Player Performance Breakdown...`)
       const playerStatRows = []
       const teamScoreRows = []
+
+      // Check if optional breakdown columns exist in Supabase schema
+      let hasBreakdownCols = false
+      try {
+        const { error } = await supabase.from('player_gameweek_stats').select('points_breakdown, match_breakdown').limit(1)
+        if (!error) hasBreakdownCols = true
+      } catch {}
 
       for (const [tName, tData] of teamResults.entries()) {
         teamScoreRows.push({
@@ -266,7 +314,7 @@ export async function syncAllToSupabase(targetGw, teamResults = null) {
         })
 
         for (const p of tData.players || []) {
-          playerStatRows.push({
+          const row = {
             gameweek: Number(targetGw),
             team_name: tName,
             player_name: p.player_name,
@@ -287,20 +335,37 @@ export async function syncAllToSupabase(targetGw, teamResults = null) {
             multiplier: Number(p.multiplier || 1),
             final_points: Number(p.final_pts || 0),
             is_effective_starter: Boolean(p.isEffectiveStarter),
-          })
+          }
+
+          if (hasBreakdownCols) {
+            row.points_breakdown = p.points_breakdown ?? null
+            row.match_breakdown = p.match_breakdown ?? null
+          }
+
+          playerStatRows.push(row)
         }
       }
 
       if (playerStatRows.length > 0) {
-        const { error: psErr } = await supabase.from('player_gameweek_stats').upsert(playerStatRows, { onConflict: 'gameweek,team_name,player_name' })
-        if (psErr) console.warn('[Supabase] Player Stats Upsert Warning:', psErr.message)
-        else console.log(`✅ Synced ${playerStatRows.length} GW${targetGw} Player Stats.`)
+        const pStatMap = new Map()
+        for (const item of playerStatRows) {
+          const key = `${item.gameweek}|${item.team_name.toLowerCase()}|${item.player_name.toLowerCase()}`
+          pStatMap.set(key, item)
+        }
+        const dedupedPStats = Array.from(pStatMap.values())
+        await upsertInChunks('player_gameweek_stats', dedupedPStats, 'gameweek,team_name,player_name', 50)
+        console.log(`✅ Synced ${dedupedPStats.length} GW${targetGw} Player Stats.`)
       }
 
       if (teamScoreRows.length > 0) {
-        const { error: tsErr } = await supabase.from('gameweek_team_scores').upsert(teamScoreRows, { onConflict: 'team_name,gameweek' })
-        if (tsErr) console.warn('[Supabase] Team Scores Upsert Warning:', tsErr.message)
-        else console.log(`✅ Synced ${teamScoreRows.length} GW${targetGw} Team Weekly Scores.`)
+        const tScoreMap = new Map()
+        for (const item of teamScoreRows) {
+          const key = `${item.team_name.toLowerCase()}|${item.gameweek}`
+          tScoreMap.set(key, item)
+        }
+        const dedupedTScores = Array.from(tScoreMap.values())
+        await upsertInChunks('gameweek_team_scores', dedupedTScores, 'team_name,gameweek', 50)
+        console.log(`✅ Synced ${dedupedTScores.length} GW${targetGw} Team Weekly Scores.`)
       }
     } else {
       console.log('[6/7] Player stats & team weekly scores will sync on next scoring run.')

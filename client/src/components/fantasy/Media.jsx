@@ -29,10 +29,14 @@ export function LayeredMedia({
 
   // Skip candidates that already failed this session.
   useEffect(() => {
-    setIdx(Math.max(0, candidates.findIndex((c) => !isImageBroken(c))))
-    setLoaded(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey])
+    const nextIdx = Math.max(0, candidates.findIndex((c) => !isImageBroken(c)))
+    setIdx(nextIdx)
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setLoaded(true)
+    } else {
+      setLoaded(false)
+    }
+  }, [resetKey, candidates])
 
   const src = candidates[idx]
   const exhausted = idx >= candidates.length
@@ -47,14 +51,17 @@ export function LayeredMedia({
 
   return (
     <span className={cn('media', className, loaded && 'has-media')} style={style} aria-hidden="true">
-      <span className="media-fallback">{fallback}</span>
+      {(!loaded || exhausted) && (
+        <span className="media-fallback" style={loaded ? { display: 'none' } : undefined}>
+          {fallback}
+        </span>
+      )}
       {!exhausted && src && (
         <img
           ref={attach}
           className={imgClassName}
           src={src}
           alt={alt}
-          loading="lazy"
           decoding="async"
           onLoad={() => setLoaded(true)}
           onError={() => {

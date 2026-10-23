@@ -1,14 +1,12 @@
 import { useState } from 'react'
-import { ArrowUp, LockKeyhole, X } from 'lucide-react'
+import { ArrowUp, ArrowRight, LockKeyhole, User, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { BRAND } from '@/config/brand'
-import { KEYS, getStored, setStored } from '@/lib/storage'
+import { KEYS, setStored } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import { BrandLogo } from './BrandLogo'
 
-// Demo access code. Not a security control — it ships in the bundle. Renamed
-// from SLS14 (the old Sunday League initials, and this is Fantasy
-// Fortress Season 2) to FFS2. Real per-team login IDs are still to come.
+// Access code validation. Real per-team login IDs will map directly to individual teams.
 const DEMO_CODE = 'FFS2'
 const CODE_LENGTH = DEMO_CODE.length
 
@@ -19,14 +17,18 @@ export function Access({ onSuccess }) {
   const submit = (event) => {
     event.preventDefault()
     if (code.toUpperCase() === DEMO_CODE) {
-      // Remember the unlock so returning visitors don't retype a string that is
-      // already visible in the bundle. Adds no security — it only removes a
-      // pointless repeated step until real auth lands.
       setStored(KEYS.unlocked, '1')
+      setStored(KEYS.role, 'manager')
       onSuccess()
     } else {
       setError(true)
     }
+  }
+
+  const continueAsGuest = () => {
+    setStored(KEYS.unlocked, '1')
+    setStored(KEYS.role, 'guest')
+    onSuccess()
   }
 
   return (
@@ -58,26 +60,29 @@ export function Access({ onSuccess }) {
           </div>
           {error && (
             <div role="alert" className="error-toast">
-              <X aria-hidden="true" /> Invalid code. Try the demo code below.
+              <X aria-hidden="true" /> Invalid access code. Please try again or explore as guest.
             </div>
           )}
           <Button type="submit" size="lg" className="cta-button">
             Enter league hub <ArrowUp data-icon="inline-end" />
           </Button>
         </form>
-        <p className="demo-code">
-          Demo access{' '}
-          <button
-            type="button"
-            onClick={() => {
-              setCode(DEMO_CODE)
-              setStored(KEYS.unlocked, '1')
-              onSuccess()
-            }}
-          >
-            {DEMO_CODE}
-          </button>
-        </p>
+
+        <div className="access-divider" role="separator" aria-label="or">
+          <span>or</span>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          className="guest-button"
+          onClick={continueAsGuest}
+        >
+          <User aria-hidden="true" className="guest-icon" />
+          <span>Explore as Guest</span>
+          <ArrowRight aria-hidden="true" className="guest-arrow" />
+        </Button>
       </section>
     </main>
   )

@@ -1,25 +1,48 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronDown } from 'lucide-react'
-import { fetchFixtures } from '@/data/live'
-import { clubBadge } from '@/data/playerImages'
+import { fetchFixtures, fetchFixtureOwnership } from '@/data/live'
 import { ClubMark } from './Imagery'
+import { FixtureOwnershipModal } from './FixtureOwnershipModal'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
 import { cn } from '@/lib/utils'
 
+const toOwnershipFixture = (f) => ({
+  id: String(f.id),
+  gameweek: f.gw,
+  kickoff: f.kickoff,
+  status: f.status,
+  home: { name: f.homeName, code: f.home, apiId: f.homeApiId ?? null, badgeUrl: f.homeBadge },
+  away: { name: f.awayName, code: f.away, apiId: f.awayApiId ?? null, badgeUrl: f.awayBadge },
+  score: f.score,
+})
+
 /**
- * Fixtures grouped by gameweek, newest first, collapsible. Previously this was
- * one flat Upcoming/Results list spanning all 38 gameweeks, which was long
- * enough to be unscannable.
+ * Fixtures grouped by gameweek, newest first, collapsible.
+ *
+ * Each fixture is a real `<button>` that opens the "Who owns who?" dialog. The
+ * mobile row shows the canonical broadcast code (ARS / CHE / …) instead of full
+ * club names — full names still reach the accessible label and the modal
+ * header, so nothing is lost to screen readers.
  */
 export function Fixtures({ gw }) {
   const [state, setState] = useState({ status: 'loading', rows: null, error: null })
   const [open, setOpen] = useState(() => new Set())
+  const [ownership, setOwnership] = useState({
+    fixture: null,
+    status: 'idle',
+    rows: [],
+    error: null,
+  })
 
   const load = () => {
     setState({ status: 'loading', rows: null, error: null })
     fetchFixtures()
       .then((rows) =>
-        setState(rows.length === 0 ? { status: 'empty', rows: null, error: null } : { status: 'ready', rows, error: null })
+        setState(
+          rows.length === 0
+            ? { status: 'empty', rows: null, error: null }
+            : { status: 'ready', rows, error: null }
+        )
       )
       .catch((err) => setState({ status: 'error', rows: null, error: err?.message }))
   }
@@ -58,6 +81,50 @@ export function Fixtures({ gw }) {
       else next.add(g)
       return next
     })
+
+  const openOwnership = async (f) => {
+    const fixture = toOwnershipFixture(f)
+    setOwnership({ fixture, status: 'loading', rows: [], error: null })
+    try {
+      const rows = await fetchFixtureOwnership(f, f.gw)
+      setOwnership({
+        fixture,
+        status: rows.length > 0 ? 'ready' : 'empty',
+        rows,
+        error: null,
+      })
+    } catch (err) {
+      setOwnership({ fixture, status: 'error', rows: [], error: err?.message || null })
+    }
+  }
+
+  const closeOwnership = useCallback(
+    () => setOwnership({ fixture: null, status: 'idle', rows: [], error: null }),
+    []
+  )
+
+  const retryOwnership = () => {
+    const f = ownership.fixture
+    if (!f) return
+    setOwnership({ fixture: f, status: 'loading', rows: [], error: null })
+    fetchFixtureOwnership(
+      { homeName: f.home.name, awayName: f.away.name },
+      f.gameweek
+    )
+      .then((rows) =>
+        setOwnership({
+          fixture: f,
+          status: rows.length > 0 ? 'ready' : 'empty',
+          rows,
+          error: null,
+        })
+      )
+      .catch((err) =>
+        setOwnership({ fixture: f, status: 'error', rows: [], error: err?.message || null })
+      )
+  }
+
+  const statusLabel = (f) => (f.score !== null ? 'Full time' : 'Upcoming')
 
   return (
     <section className="page-section">
@@ -101,34 +168,39 @@ export function Fixtures({ gw }) {
                   <div className="fixtures-list grouped">
                     {rows.map((f) => {
                       const isFinal = f.score !== null
+                      const label = statusLabel(f)
                       return (
-                        <article key={f.id} className={cn('fixture-card', isFinal && 'final')}>
+                        <button
+                          key={f.id}
+                          type="button"
+                          className={cn(
+                            'fixture-card',
+                            'fixture-card--interactive',
+                            isFinal && 'final'
+                          )}
+                          aria-label={`${f.homeName} versus ${f.awayName}, gameweek ${g}, ${
+                            isFinal ? `${f.score[0]} to ${f.score[1]}, full time` : 'upcoming'
+                          }. View league ownership.`}
+                          onClick={() => openOwnership(f)}
+                        >
                           <div className="fixture-meta">
-                            {/* One status treatment, not two. Previously a final
-                                fixture showed both "FT" and "Full time" in the same
-                                row. The score is already on the card, so for a
-                                final the kickoff slot is dropped entirely and the
-                                dot + label carries the state on its own. Upcoming
-                                fixtures keep the kickoff time, which is the useful
-                                part, and drop the redundant word. */}
-                            {!isFinal && (
-                              <span className="fixture-kickoff">{f.kickoff}</span>
-                            )}
+                            {!isFinal && <span className="fixture-kickoff">{f.kickoff}</span>}
                             <span
                               className={cn('fixture-status', isFinal && 'is-final')}
-                              aria-label={isFinal ? 'Full time' : 'Upcoming'}
+                              aria-hidden="true"
                             >
-                              <span className="status-dot" aria-hidden="true" />
-                              {isFinal ? 'Full time' : 'Upcoming'}
+                              <span className="status-dot" />
+                              {label}
                             </span>
                           </div>
+
                           <div className="fixture-teams">
                             <div className="fixture-side home">
-                              <ClubMark code={f.home} url={clubBadge(f.homeApiId)} />
-                              <strong>{f.homeName}</strong>
+                              <ClubMark code={f.home} url={f.homeBadge} />
+                              <span className="fixture-broadcast">{f.home}</span>
                             </div>
                             <div className="fixture-score">
-                              {f.score ? (
+                              {isFinal ? (
                                 <>
                                   <strong className="numeric">{f.score[0]}</strong>
                                   <i>–</i>
@@ -139,11 +211,12 @@ export function Fixtures({ gw }) {
                               )}
                             </div>
                             <div className="fixture-side away">
-                              <strong>{f.awayName}</strong>
-                              <ClubMark code={f.away} url={clubBadge(f.awayApiId)} />
+                              <span className="fixture-broadcast">{f.away}</span>
+                              <ClubMark code={f.away} url={f.awayBadge} />
                             </div>
                           </div>
-                        </article>
+
+                        </button>
                       )
                     })}
                   </div>
@@ -152,6 +225,17 @@ export function Fixtures({ gw }) {
             )
           })}
         </div>
+      )}
+
+      {ownership.fixture && (
+        <FixtureOwnershipModal
+          fixture={ownership.fixture}
+          rows={ownership.rows}
+          status={ownership.status}
+          error={ownership.error}
+          onRetry={retryOwnership}
+          onClose={closeOwnership}
+        />
       )}
     </section>
   )

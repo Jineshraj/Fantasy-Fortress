@@ -1,67 +1,145 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 
 /**
- * One global gameweek scope for the whole hub. Every data screen reads from
- * here, so "which week am I looking at" has exactly one answer and one location.
+ * Contextual gameweek stepper.
  *
- * Not rendered on the competition screens (H2H / Super Cup) — those are keyed to
- * their own fixed stage gameweeks, so a global week control there would be a
- * control that does nothing.
+ * One global week for the whole hub, but only on screens whose content is
+ * actually gameweek-scoped. On `/table` in Overall mode, and on the H2H / Super
+ * Cup competition screens, the bar is not mounted at all — a control that does
+ * nothing is worse than no control.
+ *
+ * The persistent bar is a 34px pill: `‹ GW 6 ▾ ›`. Paging weeks stays in the
+ * URL with `replace: true`, so three back-steps never cost three Back presses.
  */
-export function ScopeBar({ gw, latestGw, onChange, gameweeks = [] }) {
+export function ScopeBar({ gw, latestGw, onChange, gameweeks = [], visible = true }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const toggleRef = useRef(null)
+  const menuRef = useRef(null)
+
   const maxGw = latestGw || 1
   const canPrev = gw > 1
   const canNext = gw < maxGw
   const isLatest = gw >= maxGw
-  const weeks = gameweeks.length > 1 ? gameweeks : Array.from({ length: maxGw }, (_, i) => i + 1)
+  const weeks = (
+    gameweeks.length > 1 ? gameweeks : Array.from({ length: maxGw }, (_, i) => i + 1)
+  )
+    .slice()
+    .sort((a, b) => b - a)
+
+  // Close on outside pointer-down and Escape; focus returns to the pill so a
+  // keyboard user never lands back at the top of the document.
+  useEffect(() => {
+    if (!open) return undefined
+    const onPointerDown = (event) => {
+      if (!wrapRef.current?.contains(event.target)) setOpen(false)
+    }
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return
+      setOpen(false)
+      toggleRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (open) menuRef.current?.querySelector('button')?.focus()
+  }, [open])
+
+  if (!visible) return null
+
+  const step = (delta) => {
+    const next = gw + delta
+    if (next < 1 || next > maxGw) return
+    setOpen(false)
+    onChange(next)
+  }
+
+  const select = (week) => {
+    setOpen(false)
+    onChange(week)
+    toggleRef.current?.focus()
+  }
 
   return (
     <div className="scope-bar">
-      <span className="scope-label">Gameweek</span>
+      <span className="scope-label">
+        {/* §4.2 — "GAMEWEEK" where there is room, "GW" where there is not.
+            The full word stays in the DOM so the accessible name never shrinks. */}
+        <span className="scope-label-full">Gameweek</span>
+        <span className="scope-label-short" aria-hidden="true">GW</span>
+      </span>
 
-      <div className="scope-stepper">
-        <button
-          type="button"
-          onClick={() => canPrev && onChange(gw - 1)}
-          disabled={!canPrev}
-          aria-label="Previous gameweek"
-        >
-          <ChevronLeft aria-hidden="true" />
-        </button>
-        <strong className="numeric" aria-live="polite" aria-atomic="true">
-          {gw}
-        </strong>
-        <button
-          type="button"
-          onClick={() => canNext && onChange(gw + 1)}
-          disabled={!canNext}
-          aria-label="Next gameweek"
-        >
-          <ChevronRight aria-hidden="true" />
-        </button>
-      </div>
-
-      <div className="scope-chips" role="group" aria-label="Jump to gameweek">
-        {weeks.map((g) => (
+      <div className="gw-pill-wrap" ref={wrapRef}>
+        <div className="gw-pill">
           <button
-            key={g}
             type="button"
-            className={cn(g === gw && 'active')}
-            aria-pressed={g === gw}
-            aria-current={g === gw ? 'true' : undefined}
-            onClick={() => onChange(g)}
+            className="gw-step"
+            aria-label="Previous gameweek"
+            disabled={!canPrev}
+            onClick={() => step(-1)}
           >
-            {g}
+            <ChevronLeft aria-hidden="true" />
           </button>
-        ))}
-      </div>
 
-      {!isLatest && (
-        <button type="button" className="scope-latest" onClick={() => onChange(maxGw)}>
-          Latest · {maxGw}
-        </button>
-      )}
+          <button
+            type="button"
+            ref={toggleRef}
+            className="gw-pill-label"
+            aria-expanded={open}
+            aria-controls="gw-menu"
+            aria-haspopup="menu"
+            onClick={() => setOpen((v) => !v)}
+          >
+            <span className="numeric" aria-live="polite" aria-atomic="true">
+              GW {gw}
+            </span>
+            <ChevronDown aria-hidden="true" />
+          </button>
+
+          <button
+            type="button"
+            className="gw-step"
+            aria-label="Next gameweek"
+            disabled={!canNext}
+            onClick={() => step(1)}
+          >
+            <ChevronRight aria-hidden="true" />
+          </button>
+        </div>
+
+        {open && (
+          <div id="gw-menu" className="gw-menu" role="menu" ref={menuRef}>
+            {weeks.map((week) => (
+              <button
+                key={week}
+                type="button"
+                role="menuitemradio"
+                aria-checked={week === gw}
+                onClick={() => select(week)}
+              >
+                GW {week}
+              </button>
+            ))}
+            {!isLatest && (
+              <button
+                type="button"
+                role="menuitem"
+                className="gw-latest"
+                onClick={() => select(maxGw)}
+              >
+                Latest · GW {maxGw}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

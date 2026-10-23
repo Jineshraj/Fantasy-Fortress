@@ -49,7 +49,9 @@ export function StatsLeaders({ gw }) {
     <section className="page-section">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Top performers · all 16 squads</p>
+          <p className="eyebrow">
+            {board === 'gw' ? `GW ${gw} points` : 'Season points'} · all 16 squads
+          </p>
           <h1>Stats</h1>
         </div>
       </div>

@@ -6,10 +6,9 @@
 // underneath (CSS shirt / initials avatar), because a missing headshot is
 // common for youth and lower-league players.
 
-export const clubBadge = (apiFootballTeamId) =>
-  apiFootballTeamId
-    ? `https://media.api-sports.io/football/teams/${apiFootballTeamId}.png`
-    : null
+import { getClubBadgeUrl } from './clubBadges'
+
+export const clubBadge = (idOrName) => getClubBadgeUrl(idOrName)
 
 export const playerPhoto = (apiFootballPlayerId) =>
   apiFootballPlayerId
@@ -17,8 +16,10 @@ export const playerPhoto = (apiFootballPlayerId) =>
     : null
 
 // Generic resolver for a player object. Supports the provider ID under any of
-// the names it has carried, so component code never has to care.
+// the names it has carried, plus a prebuilt `photoUrl` from the data layer, so
+// component code never has to care.
 export const getPlayerImageUrl = (player = {}) =>
+  player.photoUrl ??
   playerPhoto(player.apiId ?? player.api_football_id ?? player.apiFootballId ?? null)
 
 // ---------------------------------------------------------------------------
