@@ -24,18 +24,33 @@ A next-generation fantasy football tournament platform featuring automated dual-
 
 ## 🛠️ Tech Stack
 
-* **Frontend**: React, Vite, Tailwind CSS / Vanilla CSS, Lucide Icons
-* **Backend**: Node.js (native http, ES Modules)
+* **Frontend**: React 19, Vite 8, Tailwind CSS v4, React Router 7, Lucide Icons
+* **Backend**: Node.js (native `http`, ES Modules — no Express)
 * **Database & Cloud**: Supabase (PostgreSQL), Google Sheets API (v4)
-* **Sports APIs**: SofaScore (RapidAPI), API-Football (API-Sports)
-* **Automation**: Telegram Bot API, Node Cron
+* **Sports APIs**: SofaScore (via RapidAPI), API-Football (API-Sports)
+* **AI**: Groq (primary) with Google Gemini 2.0 Flash as fallback, for lineup extraction in the Telegram bot
+* **Automation**: Telegram Bot API, built-in nightly scheduler (4:30 AM IST) plus an external cron trigger — see [Nightly sync](#nightly-sync) below
+
+---
+
+## 📋 Prerequisites
+
+* **Node.js 20.19+ or 22.12+** (required by Vite 8)
+* A Supabase project
+* A Google Sheet for the master ledger, plus a Google Cloud service account with access to it
+* API keys: RapidAPI (SofaScore), API-Football, Groq, Gemini
+* A Telegram bot token (from BotFather) for the admin bot
 
 ---
 
 ## 📋 Getting Started
 
 ### 1. Clone & Install Dependencies
+
 ```bash
+git clone https://github.com/Jineshraj/Fantasy-Fortress.git
+cd Fantasy-Fortress
+
 # Install client and server dependencies
 # (the root package only provides convenience scripts)
 npm --prefix client install
@@ -43,31 +58,83 @@ npm --prefix server install
 ```
 
 ### 2. Environment Configuration
-Create `.env` in the root and `client/` directories based on the provided examples:
+
+The **root `.env` is the server config**; **`client/.env` is the frontend config**. Both are gitignored — never commit a real `.env`, only the `.example` templates.
+
 ```bash
 cp .env.example .env
 cp client/.env.example client/.env
 ```
 
-### 3. Running Locally
+Then fill in the values in each file:
+
+* Root `.env`: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `CRON_SECRET`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_SHEET_ID`, Google service-account email + private key, `RAPIDAPI_KEY`, `API_FOOTBALL_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PORT` (default `3000`).
+* `client/.env`: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (same Supabase project as above).
+
+### 3. Set Up Supabase
+
+Run `server/supabase_schema.sql` in the Supabase Dashboard → SQL Editor. It creates the `teams`, `players`, `lineups`, and `player_gameweek_stats` tables (plus the H2H / Super Cup tables).
+
+### 4. Set Up Google Sheets
+
+Create a Google Sheet and share it with the service-account email from `GOOGLE_SERVICE_ACCOUNT_EMAIL`, then set its ID as `GOOGLE_SHEET_ID` in the root `.env`. The sheet is the master ledger and holds tabs including `Players`, `Player_ID_Mappings`, `Fixture_Staging`, and `Comparison_Dashboard` (the `Player_Aliases` tab is auto-created with a header if missing). See `AGENTS.md` for the position-resolution hierarchy and clean-sheet rules that run against these tabs.
+
+### 5. Set Up the Telegram Webhook (production bot)
+
+For local development, `npm run bot` (below) uses polling instead. For a deployed server, register the webhook once, using the same secret as `TELEGRAM_WEBHOOK_SECRET`:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook" \
+  -d "url=https://<your-server>/webhook/telegram" \
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+```
+
+The server rejects webhook requests whose `X-Telegram-Bot-Api-Secret-Token` header does not match `TELEGRAM_WEBHOOK_SECRET`.
+
+### 6. Running Locally
+
 ```bash
 # Start frontend client
 npm run dev
 
-# Run Telegram bot
+# Start the backend server (health check, Telegram webhook, cron trigger)
+npm run start
+
+# Run Telegram bot locally (polling, for development)
 npm run bot
 
-# Run scoring engine for Gameweek N
+# Run scoring engine for Gameweek N — writes results to Google Sheets
 npm run score:sheets -- 6
 
 # Sync verified gameweek data to Supabase
 npm run sync:db -- 6
 ```
 
-### 4. Frontend Tests
+Scoring is a two-step flow: `score:sheets` pauses if any rows in `Comparison_Dashboard` still need admin-approved points (`final_approved_pts`). Verify those in the sheet first, then run `sync:db` to push the verified data to Supabase.
+
+Other useful commands:
+
 ```bash
-npm --prefix client run test:render   # renders every screen against live Supabase data
-npm --prefix client run test:logos    # verifies all 16 team logos exist and are mapped
+npm run sync    # catch-up sync (fixtures + stats + scoring + Supabase)
+npm run score   # scoring + Supabase sync in one run
+npm run cron    # start the built-in nightly scheduler (see below)
+```
+
+> **Note on tests:** `client/package.json` lists `test:render`, `test:logos`, and other `test:*` scripts, but their scripts (`render-test.mjs`, `logo-check.mjs`, etc.) are local-only files that are gitignored and not in this repo, so those commands do not work after a fresh clone. They have been left out of this README until they are committed.
+
+---
+
+## ⏰ Nightly Sync
+
+There is no `node-cron` dependency. Nightly sync works in either of these ways:
+
+1. **Built-in scheduler** — `npm run cron` starts a daemon that runs the full daily pipeline at **4:30 AM IST**.
+2. **External cron** — point a cron service (e.g. cron-job.org, Render Cron) at the server, authenticated with `CRON_SECRET`:
+
+```bash
+curl "https://<your-server>/api/sync?gw=6&secret=<CRON_SECRET>"
+# or with a header: Authorization: Bearer <CRON_SECRET>
+# /cron/sync works as an alias for /api/sync
 ```
 
 ---
@@ -79,6 +146,8 @@ The client is a static SPA that reads Supabase directly. Build with:
 ```bash
 npm --prefix client run build     # output in client/dist
 ```
+
+The server must be deployed separately (e.g. Render) for the Telegram webhook and the cron trigger — the static client does not serve those.
 
 ### Routes
 
@@ -108,7 +177,7 @@ not exist. **The host must serve `index.html` for any unknown path**, or shared 
 | **Self-hosting from `server.js`** | — | ❌ **not supported yet** |
 
 If you serve the built client from your own Node server, `server.js` currently only handles
-`/health`, `/webhook/telegram` and `/api/sync` — it does **not** serve static files or do SPA
+`/`, `/health`, `/webhook/telegram` and `/api/sync` (plus `/cron/sync`) — it does **not** serve static files or do SPA
 fallback. Adding that is a backend change; until then, host the client separately.
 
 ---
