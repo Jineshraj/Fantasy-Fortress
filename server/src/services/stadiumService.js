@@ -3,8 +3,27 @@ import { google } from 'googleapis'
 import { getGoogleAuth } from '../lib/auth.js'
 import { normalizeName, getSimilarityScore } from './rosterValidator.js'
 import { SIMILARITY_THRESHOLDS } from '../lib/constants.js'
-import { TEAM_STADIUM_MAP } from './scoringEngine.js'
 import { getActiveGameweek } from './sheetsService.js'
+
+// Official 16 Team Stadium Ownership & Real-World Home Club Mapping
+export const TEAM_STADIUM_MAP = {
+  'Aguilas Dorados': { stadium: 'Anfield', homeClub: 'Liverpool FC' },
+  'Aura Farmers': { stadium: 'Etihad Stadium', homeClub: 'Manchester City' },
+  'Aztec Blinders': { stadium: 'Stamford Bridge', homeClub: 'Chelsea FC' },
+  'Choakers FC': { stadium: 'Spotify Camp Nou', homeClub: 'FC Barcelona' },
+  'Committe Team': { stadium: 'Roazhon Park', homeClub: 'Stade Rennais FC' },
+  'Iberian Wizards': { stadium: 'Parc des Princes', homeClub: 'Paris Saint-Germain' },
+  'Jogo Bonito': { stadium: 'Santiago Bernabéu', homeClub: 'Real Madrid' },
+  'Kroos Control': { stadium: 'Allianz Arena', homeClub: 'Bayern Munich' },
+  'La Pulga': { stadium: 'Stadio Olimpico', homeClub: 'AS Roma' },
+  'Mamangam DC': { stadium: 'Stadio Giuseppe Meazza(IM)', homeClub: 'Inter Milan' },
+  'Mancunians': { stadium: 'Estadio de la Cerámica', homeClub: 'Villarreal CF' },
+  'Meridian Athletic': { stadium: 'MHPArena', homeClub: 'VfB Stuttgart' },
+  'Phoenix Flyers': { stadium: 'Riyadh Air Metropolitano', homeClub: 'Atlético de Madrid' },
+  'Reds': { stadium: 'Emirates Stadium', homeClub: 'Arsenal FC' },
+  'Relegated FC': { stadium: 'Old Trafford', homeClub: 'Manchester United' },
+  'xG Illuminati': { stadium: 'Signal Iduna Park', homeClub: 'Borussia Dortmund' },
+}
 
 const spreadsheetId = process.env.GOOGLE_SHEET_ID
 

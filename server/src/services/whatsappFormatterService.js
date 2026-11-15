@@ -262,11 +262,20 @@ export async function formatSeasonStandingsWhatsApp(targetGw = 1) {
   const rows = res.data.values || []
   const gwColIdx = 2 + Number(targetGw)
 
-  const teams = rows.map(r => ({
-    team: String(r[1] || '').trim(),
-    totalPts: Number(r[2] || 0),
-    gwPts: Number(r[gwColIdx] || 0),
-  })).filter(t => t.team.length > 0)
+  const teams = rows
+    .map((r) => {
+      // Calculate true cumulative points up to targetGw (columns D=GW1, E=GW2, etc.)
+      let cumulativePts = 0
+      for (let g = 1; g <= Number(targetGw); g++) {
+        cumulativePts += Number(r[2 + g] || 0)
+      }
+      return {
+        team: String(r[1] || '').trim(),
+        totalPts: cumulativePts,
+        gwPts: Number(r[gwColIdx] || 0),
+      }
+    })
+    .filter((t) => t.team.length > 0)
 
   teams.sort((a, b) => b.totalPts - a.totalPts)
 

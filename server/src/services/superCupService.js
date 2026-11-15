@@ -14,9 +14,15 @@ import { google } from 'googleapis'
 import { getGoogleAuth } from '../lib/auth.js'
 import { normalizeName } from './rosterValidator.js'
 
-const ssId = process.env.GOOGLE_SHEET_ID
-const auth = getGoogleAuth()
-const sheets = google.sheets({ version: 'v4', auth })
+let _sheets = null
+function getSheets() {
+  if (!_sheets) {
+    const auth = getGoogleAuth()
+    _sheets = google.sheets({ version: 'v4', auth })
+  }
+  return _sheets
+}
+const getSsId = () => process.env.GOOGLE_SHEET_ID
 
 // ────────────────────────────────────────────────────────────────────
 // 1. Reuse from h2hScoringService
@@ -62,8 +68,8 @@ export const BRACKET_CARD_COORDINATES = {
  *  - matchId -> sheetRow index for quick lookup
  */
 async function readSuperCupBracket() {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: ssId,
+  const res = await getSheets().spreadsheets.values.get({
+    spreadsheetId: getSsId(),
     range: 'Super_Cup!A5:G30',
   })
   const rows = res.data.values || []
@@ -163,8 +169,8 @@ async function propagateWinners(stages, matchIdToRow) {
       range: `Super_Cup!C${u.sheetRow}:D${u.sheetRow}`,
       values: [[u.home, u.away]],
     }))
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: ssId,
+    await getSheets().spreadsheets.values.batchUpdate({
+      spreadsheetId: getSsId(),
       requestBody: { valueInputOption: 'USER_ENTERED', data },
     })
     console.log(`[SuperCup] ✅ Propagated ${updates.length} qualified matchups into next bracket round(s)!`)
@@ -178,7 +184,7 @@ async function propagateWinners(stages, matchIdToRow) {
 
 export async function applySuperCupWinnerFormatting(stages) {
   try {
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: ssId })
+    const meta = await getSheets().spreadsheets.get({ spreadsheetId: getSsId() })
     const scSheet = meta.data.sheets.find((s) => s.properties.title === 'Super_Cup')
     if (!scSheet) return
     const sheetId = scSheet.properties.sheetId
@@ -301,8 +307,8 @@ export async function applySuperCupWinnerFormatting(stages) {
     }
 
     if (formatRequests.length > 0) {
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: ssId,
+      await getSheets().spreadsheets.batchUpdate({
+        spreadsheetId: getSsId(),
         requestBody: { requests: formatRequests },
       })
       console.log(`[SuperCup] 🎨 Applied winner badge & bracket tree highlighting for ${stages.filter((s) => s.winner).length} match(es)!`)
@@ -382,8 +388,8 @@ export async function syncSuperCupForGw(targetGw, { dryRun = false } = {}) {
   }
 
   if (!dryRun && updates.length > 0) {
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: ssId,
+    await getSheets().spreadsheets.values.batchUpdate({
+      spreadsheetId: getSsId(),
       requestBody: { valueInputOption: 'USER_ENTERED', data: updates },
     })
     console.log(`[SuperCup] ✅ GW${targetGw}: wrote ${updates.length} match updates`)

@@ -47,9 +47,9 @@ The `Comparison_Dashboard` reconciliation engine aggregates match points per pla
 
 ## 4. Club Canonicalization
 To ensure consistent matching across match fixtures, player statistics, and tournament lineups across providers:
-- **Source of Truth for Club Names**: `MASTER_TOP5_CLUBS` array in `fixtureService.js` and `dashboardService.js` covering all 5 top European leagues (Premier League, La Liga, Serie A, Ligue 1, and Bundesliga).
+- **Source of Truth for Club Names**: `MASTER_TOP5_CLUBS` exported from `fixtureService.js` and imported into `dashboardService.js` covering all 5 top European leagues (Premier League, La Liga, Serie A, Ligue 1, and Bundesliga).
 - **Canonicalization Bridge**: `getCanonicalClubName(rawClub)` in `fixtureService.js` canonicalizes raw or truncated provider club names to their authoritative master name.
 - **Low-Level Normalizer**: `cleanClubName()` in `rosterValidator.js` strips sponsorship prefixes, suffixes, and extraneous tokens.
-- **Duplicate Synchronization Rule**: `MASTER_TOP5_CLUBS` is currently duplicated across `fixtureService.js` and `dashboardService.js`. Any addition or modification to the club registry **must be updated identically in BOTH files**.
+- **Single Source of Truth**: `MASTER_TOP5_CLUBS` is centrally defined in `fixtureService.js` and imported directly by consumers.
 - **Auditing Tool**: `node server/scripts/checkUnknownClubs.js` scans `Fixture_Staging` to detect unknown, misclustered, or unverified clubs against `MASTER_TOP5_CLUBS`.
 

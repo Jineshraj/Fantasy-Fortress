@@ -343,11 +343,90 @@
 .view-toggle button { display: flex; align-items: center; justify-content: center; gap: 7px; }
 .view-toggle svg { width: 16px; }
 
-.pitch { min-height: 650px; display: flex; flex-direction: column; justify-content: space-around; gap: 14px; padding: 24px 8px 16px; border: 3px solid var(--ff-ink); border-radius: 20px; background: linear-gradient(180deg, #1a8f4a 0%, #15753d 40%, #15753d 60%, #1a8f4a 100%); position: relative; overflow: hidden; box-shadow: 6px 6px 0 var(--ff-ink); }
-.pitch:before { content: ''; position: absolute; inset: 18px; border: 2px solid rgba(255, 255, 255, 0.18); border-radius: 4px; pointer-events: none; }
-.pitch:after { content: ''; position: absolute; left: 50%; top: 50%; width: 94px; height: 94px; border: 2px solid rgba(255, 255, 255, 0.18); border-radius: 50%; transform: translate(-50%,-50%); pointer-events: none; }
-.pitch-bench-divider { border: 0; border-top: 2px dashed rgba(255, 255, 255, 0.35); margin: 6px 12px; position: relative; z-index: 1; }
-.pitch-bench { margin-top: 2px; }
+.pitch {
+  min-height: 640px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 26px 8px 24px;
+  border: 3px solid var(--ff-ink);
+  border-radius: 16px;
+  background-color: #1b9150;
+  background-image: repeating-linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08) 0,
+    rgba(255, 255, 255, 0.08) 60px,
+    transparent 60px,
+    transparent 120px
+  );
+  position: relative;
+  overflow: hidden;
+  box-shadow: 4px 4px 0 var(--ff-ink);
+}
+.pitch:before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-radius: 6px;
+  pointer-events: none;
+  z-index: 0;
+}
+.pitch:after {
+  display: none;
+}
+.pitch-markings {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.pitch-penalty-area {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 12px;
+  height: 110px;
+  border: 2.5px solid rgba(255, 255, 255, 0.55);
+  border-top: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.07) 0,
+    rgba(255, 255, 255, 0.07) 4px,
+    transparent 4px,
+    transparent 12px
+  );
+  pointer-events: none;
+}
+.pitch-goal-area {
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  top: 12px;
+  height: 46px;
+  border: 2.5px solid rgba(255, 255, 255, 0.55);
+  border-top: 0;
+  pointer-events: none;
+}
+.pitch-halfway-line {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 60px;
+  border-top: 2.5px solid rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+}
+.pitch-center-circle {
+  position: absolute;
+  left: 50%;
+  top: -55px;
+  width: 110px;
+  height: 110px;
+  margin-left: -55px;
+  border: 2.5px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+}
 .pitch-line { position: relative; z-index: 1; display: flex; justify-content: center; gap: 4px; }
 .player-card { width: 68px; flex: 0 0 68px; }
 .position-tag { padding: 1px 4px; border-radius: 3px; background: var(--ff-ink); color: #ffffff; font-size: 10px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; display: inline-flex; align-items: center; }
@@ -1079,6 +1158,8 @@ h1, h2, h3 { letter-spacing: -.03em; }
 .fixture-status svg { display: none; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--secondary); flex: none; }
 .fixture-status.is-final .status-dot { background: var(--primary-text); }
+.fixture-status.is-live .status-dot { background: #e11d48; }
+.fixture-card.is-live { border-color: rgba(225, 29, 72, .35); }
 .fixture-card { padding: 12px; gap: 10px; }
 .fixtures-list.grouped { padding: 8px; gap: 6px; }
 .fixtures-list.grouped .fixture-card { padding: 10px; }
@@ -1289,6 +1370,53 @@ h1, h2, h3 { letter-spacing: -.03em; }
   padding-top: 6px;
 }
 
+/* --- Tactical Ticker Tape Banner --- */
+.pitch-ticker-tape {
+  width: 100%;
+  box-sizing: border-box;
+  background: #facc15;
+  color: var(--ff-ink);
+  border: 2.5px solid var(--ff-ink);
+  border-radius: 8px;
+  box-shadow: 3px 3px 0 var(--ff-ink);
+  padding: 6px 14px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.pitch-ticker-tape::before,
+.pitch-ticker-tape::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--ff-ink),
+    var(--ff-ink) 4px,
+    #facc15 4px,
+    #facc15 8px
+  );
+}
+.pitch-ticker-tape::before { left: 0; border-right: 2px solid var(--ff-ink); }
+.pitch-ticker-tape::after { right: 0; border-left: 2px solid var(--ff-ink); }
+
+.pitch-ticker-tape .ticker-text {
+  font-family: var(--font-heading);
+  font-weight: 900;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ff-ink);
+  white-space: nowrap;
+  padding: 0 10px;
+}
+
 /* --- Item 4: Player cards & lineup state machine (Neo-Brutalist Collectible Style) --- */
 .pitch-line {
   position: relative;
@@ -1301,152 +1429,97 @@ h1, h2, h3 { letter-spacing: -.03em; }
   min-width: 0;
 }
 
-/* Base Uniform Player Card */
-.player-card {
+/* ============================================================================
+   Item 4: Player Card Architecture (Composite Avatar Disk Overlapping Plaque)
+   ========================================================================== */
+.player-card-unit {
   position: relative;
   box-sizing: border-box;
-  width: clamp(60px, 15.2vw, 66px);
-  flex: 0 0 clamp(60px, 15.2vw, 66px);
-  height: 112px;
+  width: clamp(62px, 15.6vw, 70px);
+  flex: 0 0 clamp(62px, 15.6vw, 70px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding: 3px 2px 5px;
-  border: 2.5px solid var(--ff-ink);
-  border-radius: 11px;
-  background: var(--card);
-  color: var(--card-foreground);
-  box-shadow: 3px 3px 0 var(--ff-ink);
-  transition: transform .15s ease, box-shadow .15s ease;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
   cursor: pointer;
-  overflow: hidden;
   text-decoration: none;
+  transition: transform .15s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.player-card:hover, .player-card:focus-visible {
-  transform: translateY(-3px);
-  box-shadow: 4px 5px 0 var(--ff-ink);
-  z-index: 5;
+/* Playful Neo-Brutalist Alternating Card Tilt */
+.pitch-line .player-card-unit:nth-child(odd) {
+  transform: rotate(-1.6deg);
 }
-.player-card:active {
-  transform: translate(1px, 1px);
-  box-shadow: 2px 2px 0 var(--ff-ink);
+.pitch-line .player-card-unit:nth-child(even) {
+  transform: rotate(1.6deg);
 }
-.player-card:focus-visible {
+.pitch-line .player-card-unit:only-child {
+  transform: none;
+}
+.pitch-line .player-card-unit:hover,
+.pitch-line .player-card-unit:focus-visible {
+  transform: translateY(-4px) scale(1.03) rotate(0deg);
+  z-index: 10;
+}
+.player-card-unit:active {
+  transform: translate(1px, 1px) rotate(0deg);
+}
+.player-card-unit:focus-visible {
   outline: 3px solid var(--ff-green);
-  outline-offset: 2px;
+  outline-offset: 3px;
+  border-radius: 12px;
 }
 
-/* Card State Variations */
-.player-card--out {
-  border-color: var(--ff-danger);
-  box-shadow: 3px 3px 0 var(--ff-danger);
-}
-.player-card--in {
-  border-color: var(--ff-green);
-  box-shadow: 3px 3px 0 var(--ff-green);
-}
-.player-card--unused {
-  opacity: .62;
-  filter: grayscale(0.25);
-}
-
-/* --- Top Header Row: Position Tag + Captain Badge --- */
-.player-top {
-  width: 100%;
+/* --- The Avatar Disk (Circular Medallion with Position Ring Halo) --- */
+.player-avatar-disk {
+  position: relative;
+  z-index: 2;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 3px solid var(--ff-ink);
+  box-shadow: inset 0 0 0 4.5px var(--pos-ring, #ffffff), 3px 3px 0 var(--ff-ink);
+  background: #ffffff;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 1px;
-  min-height: 15px;
-  gap: 2px;
-}
-
-/* Position Badges (Neo-Brutalist color-coding) */
-.player-card .position-tag {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  padding: 1px 3.5px;
-  font-family: var(--font-heading);
-  font-size: 8px;
-  font-weight: 900;
-  line-height: 1;
-  letter-spacing: .05em;
-  text-transform: uppercase;
-  border-radius: 3px;
-  border: 1px solid var(--ff-ink);
-  background: var(--ff-ink);
-  color: #ffffff;
+  transition: transform .15s ease;
+  flex-shrink: 0;
 }
-.player-card .position-tag.pos-gkp {
-  background: #facc15;
-  color: var(--ff-ink);
-}
-.player-card .position-tag.pos-def {
-  background: #38bdf8;
-  color: var(--ff-ink);
-}
-.player-card .position-tag.pos-mid {
-  background: #4ade80;
-  color: var(--ff-ink);
-}
-.player-card .position-tag.pos-fwd {
-  background: #fb7185;
-  color: #ffffff;
+.player-card-unit:hover .player-avatar-disk {
+  transform: scale(1.05);
 }
 
-/* Captaincy Badges */
-.badge-captain, .badge-captain-handover {
-  display: inline-grid;
-  place-items: center;
-  min-width: 17px;
-  height: 14px;
-  padding: 0 2px;
-  border-radius: 3px;
-  font-family: var(--font-heading);
-  font-size: 9.5px;
-  font-weight: 900;
-  line-height: 1;
-  background: #ffd700;
-  color: var(--ff-ink);
-  border: 1.5px solid var(--ff-ink);
-  box-shadow: 1px 1px 0 var(--ff-ink);
-}
-.badge-vice {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 14px;
-  padding: 0 2px;
-  border-radius: 3px;
-  font-family: var(--font-heading);
-  font-size: 8.5px;
-  font-weight: 900;
-  line-height: 1;
-  background: #ffffff;
-  color: var(--ff-ink);
-  border: 1.5px solid var(--ff-ink);
-  box-shadow: 1px 1px 0 var(--ff-ink);
-}
+/* Position Ring Colors from MyTeamPitch */
+.player-card-unit.pos-gkp { --pos-ring: #ffd23f; }
+.player-card-unit.pos-def { --pos-ring: #4cb8ff; }
+.player-card-unit.pos-mid { --pos-ring: #3dffa0; }
+.player-card-unit.pos-fwd { --pos-ring: #ff7aa8; }
+.player-card-unit.is-sub-out { --pos-ring: #ff5c6c; }
 
-/* --- Photo: Circular Centerpiece Cutout --- */
-.player-card .player-photo-wrap {
-  width: 36px;
-  height: 36px;
+.player-photo-circle {
+  position: absolute;
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
   border-radius: 50%;
   overflow: hidden;
-  border: 2px solid var(--ff-ink);
-  background: #f4efff;
-  flex-shrink: 0;
-  margin: 1px 0;
-  box-shadow: 1px 1px 0 rgba(27, 0, 44, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.player-card .player-photo {
+.player-photo-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   border-radius: 50%;
 }
-.player-card .shirt {
+.player-photo-circle .shirt {
   width: 32px;
   height: 32px;
   font-size: 9px;
@@ -1455,124 +1528,275 @@ h1, h2, h3 { letter-spacing: -.03em; }
   background: var(--secondary);
 }
 
-/* --- Name: High-legibility Uppercase --- */
-.player-card > strong {
+/* Attached Disk Micro-Badges */
+.player-info-dot {
+  position: absolute;
+  top: -4px;
+  left: -3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ff-ink);
+  color: #ffffff;
+  border: 0;
+  font-family: var(--font-heading);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+  display: grid;
+  place-items: center;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.player-cap-dot {
+  position: absolute;
+  top: -6px;
+  right: -3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffd23f;
+  color: var(--ff-ink);
+  border: 2.5px solid var(--ff-ink);
+  box-shadow: 2px 2px 0 var(--ff-ink);
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 17px;
+  text-align: center;
+  display: grid;
+  place-items: center;
+  z-index: 3;
+}
+.player-cap-dot.vc {
+  background: #ffffff;
+}
+
+.player-event-bolt {
+  position: absolute;
+  top: 30px;
+  right: -1px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffd23f;
+  border: 2px solid var(--ff-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+.player-event-bolt svg {
+  width: 9px;
+  height: 9px;
+}
+
+/* --- The Rectangular Plaque (Tucked Under Avatar Disk) --- */
+.player-plaque {
+  position: relative;
+  z-index: 1;
+  margin-top: -14px;
+  width: 100%;
+  box-sizing: border-box;
+  border: 3px solid var(--ff-ink);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 3px 3px 0 var(--ff-ink);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding-top: 15px; /* Clearance for overlapping avatar disk */
+}
+
+.player-name-wrap {
+  width: 100%;
+  padding: 2px 2px 4px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+}
+
+.player-card-unit .player-name {
   max-width: 100%;
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 800 10px/1.2 var(--font-heading);
+  font: 800 10px/1.1 var(--font-heading);
   text-transform: uppercase;
   letter-spacing: .01em;
-  color: var(--card-foreground);
+  color: var(--ff-ink);
   text-align: center;
-  padding: 0 2px;
+  display: block;
 }
 
-/* --- Opponent fixture --- */
-.player-opponent {
-  max-width: 100%;
+
+/* --- The Split Bottom Deck [ FIXTURE | PTS ] --- */
+.player-split-bar {
   width: 100%;
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: 8.5px;
-  font-weight: 800;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  line-height: 1.1;
-  text-align: center;
-  margin-bottom: 2px;
+  height: 21px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(24px, 1fr);
+  align-items: stretch;
+  border-top: 2.5px solid var(--ff-ink);
+  box-sizing: border-box;
 }
 
-/* --- Floating Tactile Score Pill --- */
-.player-bottom {
-  width: 100%;
-  margin-top: auto;
+.player-fixture-cell {
+  background: #e9dcff;
+  color: var(--ff-ink);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-height: 19px;
-  background: transparent;
-  border-top: none;
-  box-sizing: border-box;
-  padding: 0;
+  font: 800 8.5px/1 var(--font-heading);
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  border-right: 2px solid var(--ff-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
 }
 
-.player-card .player-bottom .player-points {
+.fixture-code {
+  font-weight: 800;
+}
+
+.venue-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 5px;
-  background: var(--primary); /* Vibrant neon green pill */
-  color: var(--ff-ink); /* Sharp dark ink numerals */
-  font: 900 11px/1 var(--font-heading);
-  text-align: center;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 1.5px;
+  border-radius: 2px;
   border: 1.5px solid var(--ff-ink);
-  box-shadow: 1px 1px 0 var(--ff-ink);
+  font: 900 7px/1 var(--font-heading);
   line-height: 1;
+  text-transform: uppercase;
+}
+.venue-chip.is-home {
+  background: var(--ff-ink);
+  color: #ffffff;
+}
+.venue-chip.is-away {
+  background: #ffffff;
+  color: var(--ff-ink);
 }
 
-/* Negative points */
-.player-points.is-negative {
+.player-points-cell {
+  background: var(--ff-ink);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: 900 12.5px/1 var(--font-heading);
+  text-align: center;
+  white-space: nowrap;
+  padding: 0 2px;
+  line-height: 1;
+}
+.player-points-cell.is-haul {
+  background: #3dffa0 !important;
+  color: var(--ff-ink) !important;
+  font-size: 13.5px;
+}
+.player-points-cell.is-negative {
   background: var(--ff-danger) !important;
   color: #ffffff !important;
-  border-color: var(--ff-ink) !important;
 }
-
-/* Unused bench player score pill: subdued */
-.player-card--unused .player-bottom .player-points {
-  background: #ede8f5;
-  color: var(--muted-foreground);
-  border-color: #b7a9ce;
-  box-shadow: none;
-}
-
-/* Sub OUT: Floating Red OUT Badge */
-.player-card--out .player-bottom .badge-auto-out {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 5px;
-  background: var(--ff-danger);
-  border: 1.5px solid var(--ff-ink);
-  color: #ffffff;
-  font-family: var(--font-heading);
-  font-weight: 900;
+.player-points-cell.is-out {
+  background: #c4152b !important;
+  color: #ffffff !important;
   font-size: 9px;
-  line-height: 1;
-  box-shadow: 1px 1px 0 var(--ff-ink);
+  letter-spacing: .04em;
 }
-
-/* Sub IN: Floating IN + Points */
-.player-card--in .player-bottom .badge-auto-in {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 18px;
-  padding: 0 4px;
-  border-radius: 5px;
-  background: var(--secondary);
-  border: 1.5px solid var(--ff-ink);
-  color: var(--secondary-foreground);
-  font-family: var(--font-heading);
-  font-weight: 900;
+.player-points-cell.is-in {
+  background: #3dffa0 !important;
+  color: var(--ff-ink) !important;
   font-size: 8.5px;
-  line-height: 1;
-  box-shadow: 1px 1px 0 var(--ff-ink);
+  gap: 2px;
+}
+.player-points-cell.is-in small {
+  font-size: 7px;
+  background: var(--ff-ink);
+  color: #ffffff;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+.player-points-cell.is-yet-to-play {
+  background: #e9dcff !important;
+  color: var(--ff-ink) !important;
+  font-size: 8.5px;
+  letter-spacing: .03em;
 }
 
-/* --- Uniform Bench Cards (No shrinking/distortion) --- */
-.player-compact {
-  /* Retains full uniform size with pitch cards */
+/* --- Card State Variations --- */
+.player-card-unit.is-captain .player-name-wrap {
+  background: #ffd23f;
+}
+.player-card-unit.is-captain .player-fixture-cell {
+  background: #fef08a;
+}
+.player-card-unit.is-vice .player-name-wrap {
+  background: #e9dcff;
+}
+
+.player-card-unit.is-sub-out .player-name-wrap {
+  background: repeating-linear-gradient(
+    45deg,
+    #ffd0d6 0,
+    #ffd0d6 5px,
+    #fff 5px,
+    #fff 10px
+  );
+}
+.player-card-unit.is-sub-out .player-plaque {
+  border-color: #c4152b;
+  box-shadow: 3px 3px 0 #c4152b;
+}
+.player-card-unit.is-sub-out .player-avatar-disk {
+  border-color: #c4152b;
+  box-shadow: 2px 2px 0 #c4152b;
+}
+.player-card-unit.is-sub-out .player-photo-circle img {
+  opacity: .35;
+  filter: grayscale(0.85);
+}
+
+.player-card-unit.is-sub-in .player-plaque {
+  border-color: #3dffa0;
+  box-shadow: 3px 3px 0 #3dffa0;
+}
+.player-card-unit.is-sub-in .player-avatar-disk {
+  border-color: #3dffa0;
+}
+
+/* --- Bench Ticket-Stub Variations --- */
+.bench-col .player-plaque {
+  border-style: dashed;
+  box-shadow: 3px 3px 0 #6a1fd0;
+}
+.bench-col .player-avatar-disk {
+  border-style: dashed;
+}
+
+.player-card-unit.is-bench-unused {
+  opacity: .65;
+  filter: grayscale(0.2);
+  transition: opacity .15s ease, filter .15s ease, transform .15s ease;
+}
+.player-card-unit.is-bench-unused:hover,
+.player-card-unit.is-bench-unused:focus-visible {
+  opacity: 1;
+  filter: none;
 }
 
 /* --- Responsive Scaling (Tablet & Desktop) --- */
@@ -1580,35 +1804,31 @@ h1, h2, h3 { letter-spacing: -.03em; }
   .pitch-line {
     gap: 9px;
   }
-  .player-card {
-    width: 72px;
-    flex: 0 0 72px;
-    height: 122px;
-    padding: 4px 3px 6px;
-    border-radius: 12px;
+  .player-card-unit {
+    width: 74px;
+    flex: 0 0 74px;
   }
-  .player-card .player-photo-wrap {
-    width: 40px;
-    height: 40px;
+  .player-avatar-disk {
+    width: 50px;
+    height: 50px;
   }
-  .player-card > strong {
-    font-size: 11px;
+  .player-plaque {
+    margin-top: -18px;
+    padding-top: 20px;
+    border-radius: 11px;
   }
-  .player-opponent {
+  .player-card-unit .player-name {
+    font-size: 10.5px;
+  }
+  .player-split-bar {
+    height: 22px;
+    grid-template-columns: minmax(0, 1.25fr) minmax(28px, 1fr);
+  }
+  .player-fixture-cell {
     font-size: 9px;
-    margin-bottom: 2px;
   }
-  .player-bottom {
-    min-height: 20px;
-  }
-  .player-card .player-bottom .player-points {
-    min-width: 32px;
-    height: 20px;
-    font-size: 12px;
-  }
-  .player-card .position-tag {
-    font-size: 8.5px;
-    padding: 1px 4px;
+  .player-points-cell {
+    font-size: 13px;
   }
 }
 
@@ -1616,51 +1836,40 @@ h1, h2, h3 { letter-spacing: -.03em; }
   .pitch-line {
     gap: 14px;
   }
-  .player-card {
-    width: 86px;
-    flex: 0 0 86px;
-    height: 138px;
-    padding: 5px 4px 7px;
-    border-radius: 13px;
+  .player-card-unit {
+    width: 88px;
+    flex: 0 0 88px;
+  }
+  .player-avatar-disk {
+    width: 58px;
+    height: 58px;
+    border-width: 3px;
+    box-shadow: 3px 3px 0 var(--ff-ink);
+  }
+  .player-plaque {
+    margin-top: -22px;
+    padding-top: 24px;
+    border-radius: 12px;
+    border-width: 3px;
     box-shadow: 4px 4px 0 var(--ff-ink);
   }
-  .player-card:hover, .player-card:focus-visible {
-    transform: translateY(-4px);
-    box-shadow: 5px 6px 0 var(--ff-ink);
+  .player-card-unit .player-name {
+    font-size: 12px;
   }
-  .player-card .player-photo-wrap {
-    width: 46px;
-    height: 46px;
+  .player-split-bar {
+    height: 25px;
+    grid-template-columns: minmax(0, 1.25fr) minmax(32px, 1fr);
   }
-  .player-card > strong {
-    font-size: 12.5px;
+  .player-fixture-cell {
+    font-size: 10px;
   }
-  .player-opponent {
-    font-size: 9.5px;
-    margin-bottom: 3px;
+  .player-points-cell {
+    font-size: 14px;
   }
-  .player-bottom {
-    min-height: 22px;
-  }
-  .player-card .player-bottom .player-points {
-    min-width: 34px;
-    height: 22px;
-    font-size: 13px;
-    border-radius: 6px;
-  }
-  .player-card .position-tag {
-    font-size: 9px;
-    padding: 1.5px 5px;
-  }
-  .badge-captain, .badge-captain-handover {
-    min-width: 20px;
-    height: 16px;
-    font-size: 10.5px;
-  }
-  .badge-vice {
-    min-width: 22px;
-    height: 16px;
-    font-size: 9.5px;
+  .player-cap-dot {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
   }
 }
 
@@ -1908,8 +2117,25 @@ h1, h2, h3 { letter-spacing: -.03em; }
 
 @media (max-width: 359px) {
   .page-section { padding-left: 12px; padding-right: 12px; }
-  .player-card { width: 68px; flex-basis: 76px; }
-  .player-compact { width: 56px; flex-basis: 64px; }
+  .player-card,
+  .player-compact {
+    width: 58px;
+    flex: 0 0 58px;
+    height: 108px;
+  }
+  .player-card .player-photo-wrap {
+    width: 34px;
+    height: 34px;
+  }
+  .player-card .player-name {
+    font-size: 9px;
+  }
+  .player-split-bar {
+    height: 19px;
+  }
+  .player-points-cell {
+    font-size: 10px;
+  }
   .pillar-col { padding: 8px 3px; }
   .pillar-hero-score { font-size: 24px; }
   .pillar-score { font-size: 16px; }
@@ -2284,53 +2510,110 @@ h1, h2, h3 { letter-spacing: -.03em; }
   background: var(--ff-danger) !important;
   color: #ffffff !important;
 }
+.compact-player-pts.is-yet-to-play {
+  background: #e9dcff !important;
+  color: var(--ff-ink) !important;
+  font-size: 10px;
+}
+.squad-row .is-yet-to-play {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  letter-spacing: .04em;
+}
 
-/* --- Bench Section (Below Pitch) --- */
+
+/* --- Bench Section (Below Pitch - Dugout Container) --- */
 .bench-section {
   margin-top: var(--space-4);
+  background: var(--ff-ink);
+  border: 3px solid var(--ff-ink);
+  border-radius: 16px;
+  box-shadow: 4px 4px 0 var(--ff-ink-deep);
+  padding: 16px 8px 20px;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  margin-bottom: 96px; /* Clearance above fixed mobile bottom-nav */
 }
-.bench-heading h2 {
-  margin: 0;
-  color: #ffffff;
-  font: 800 clamp(20px, 5.5vw, 26px)/1 var(--font-heading);
-  letter-spacing: .01em;
+.bench-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 4px;
+}
+.bench-pill-badge {
+  display: inline-block;
+  background: #ffd23f;
+  border: 2.5px solid #ffffff;
+  border-radius: 6px;
+  padding: 2px 12px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
   text-transform: uppercase;
-}
-.bench-heading .eyebrow {
-  margin: 0 0 2px;
-  color: var(--on-bg-muted);
+  transform: rotate(-2deg);
+  box-shadow: 2px 2px 0 var(--ff-ink);
+  color: var(--ff-ink);
 }
 .bench-row {
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
-  align-items: center;
-  gap: clamp(3px, 1.1vw, 7px);
+  align-items: flex-start;
+  gap: clamp(4px, 1.4vw, 9px);
   width: 100%;
 }
-.bench-row .player-card,
-.bench-row .player-compact {
-  flex: 0 0 clamp(60px, 15.2vw, 66px);
+.bench-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 clamp(62px, 15.6vw, 70px);
   min-width: 0;
+}
+.bench-order-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.bench-num {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  color: var(--ff-ink);
+  text-align: center;
+  line-height: 16px;
+  font-size: 10px;
+  font-weight: 900;
+  display: inline-grid;
+  place-items: center;
+}
+.bench-col .player-card-unit,
+.bench-col .player-card {
+  width: 100%;
+  flex: 0 0 100%;
 }
 @media (min-width: 540px) {
   .bench-row {
     gap: 9px;
   }
-  .bench-row .player-card,
-  .bench-row .player-compact {
-    flex: 0 0 72px;
+  .bench-col {
+    flex: 0 0 74px;
   }
 }
 @media (min-width: 768px) {
   .bench-row {
     gap: 14px;
   }
-  .bench-row .player-card,
-  .bench-row .player-compact {
-    flex: 0 0 86px;
+  .bench-col {
+    flex: 0 0 88px;
   }
 }

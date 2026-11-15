@@ -17,6 +17,8 @@ const FOCUSABLE =
 export function FixtureOwnershipModal({ fixture, rows, status, error, onRetry, onClose }) {
   const dialogRef = useRef(null)
   const openerRef = useRef(null)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   useEffect(() => {
     openerRef.current = document.activeElement
@@ -25,7 +27,7 @@ export function FixtureOwnershipModal({ fixture, rows, status, error, onRetry, o
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
-        onClose()
+        onCloseRef.current?.()
         return
       }
       if (event.key !== 'Tab' || !dialog) return
@@ -45,7 +47,7 @@ export function FixtureOwnershipModal({ fixture, rows, status, error, onRetry, o
       document.removeEventListener('keydown', handleKeyDown)
       openerRef.current?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   const homeRows = (rows || []).filter((r) => r.side === 'home')
   const awayRows = (rows || []).filter((r) => r.side === 'away')

@@ -40,8 +40,34 @@ update.md
 routing-plan.md
 ux-plan.md
 ux-audit.md
+Nov7Audit.md
+toBePlayed.md
+*Audit*.md
+scratch/
 
 # Local Test Scripts (contains PC filepaths)
 client/*.mjs
 client/render-test*
 client/logo-check*
+
+# Local API Cache & Debug Archives
+server/data/
+server/scripts/_archive/
+
+# IDE & OS Artifacts
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+
+server/scripts/_archive/
+
+# IDE & OS Artifacts
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak

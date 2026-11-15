@@ -122,7 +122,7 @@ CREATE TABLE IF NOT EXISTS fixtures (
     home_score INT,
     away_score INT,
     match_date TEXT,
-    status TEXT NOT NULL, -- SCHEDULED, LIVE, FINISHED
+    status TEXT NOT NULL, -- SCHEDULED, LIVE, FINISHED, POSTPONED, CANCELLED, ABANDONED, AWARDED, VOID, SUSPENDED
     created_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT unique_gw_match UNIQUE (gameweek, match_id, home_team, away_team)
 );

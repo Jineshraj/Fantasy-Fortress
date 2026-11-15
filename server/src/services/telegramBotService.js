@@ -32,7 +32,10 @@ function getAllowedAdminIds() {
  */
 export function isAuthorizedAdmin(userId) {
   const allowedIds = getAllowedAdminIds()
-  if (allowedIds.length === 0) return true // If not configured, allow all for dev testing
+  if (allowedIds.length === 0) {
+    console.warn(`[Security] ALLOWED_ADMIN_IDS is not configured in .env! Denying access to User ID: ${userId}`)
+    return false
+  }
   return allowedIds.includes(String(userId))
 }
 
@@ -177,7 +180,15 @@ export async function processTelegramMessage(update) {
   // 1. Handle Command: Set Custom Gameweek (e.g. /setgw 1, /gw 1)
   const setGwMatch = text.match(/^\/(?:setgw|gw)\s+(\d+)$/i)
   if (setGwMatch) {
-    explicitAdminGw = parseInt(setGwMatch[1], 10)
+    const requestedGw = parseInt(setGwMatch[1], 10)
+    if (isNaN(requestedGw) || requestedGw < 1 || requestedGw > 38) {
+      return {
+        chatId,
+        text: '⚠️ *Invalid Gameweek:* Gameweek must be between 1 and 38.',
+        options: { parse_mode: 'Markdown', ...getAdminKeyboard(currentGw) },
+      }
+    }
+    explicitAdminGw = requestedGw
     const submittedList = await fetchSubmittedTeamsFromSheet(explicitAdminGw)
 
     const replyText = `🎯 *ACTIVE GAMEWEEK LOCKED TO GW${explicitAdminGw}*\n\n` +
@@ -222,6 +233,9 @@ export async function processTelegramMessage(update) {
   const standingsMatch = text.match(/^\/standings(?:\s+(\d+))?$/i)
   if (standingsMatch) {
     const gw = standingsMatch[1] ? parseInt(standingsMatch[1], 10) : currentGw
+    if (isNaN(gw) || gw < 1 || gw > 38) {
+      return { chatId, text: '⚠️ *Invalid Gameweek:* Gameweek must be between 1 and 38.', options: { parse_mode: 'Markdown' } }
+    }
     try {
       const gwMsg = await formatGwStandingsWhatsApp(gw)
       return { chatId, text: gwMsg, options: { parse_mode: 'Markdown' } }
@@ -233,6 +247,9 @@ export async function processTelegramMessage(update) {
   const seasonMatch = text.match(/^\/season(?:\s+(\d+))?$/i)
   if (seasonMatch) {
     const gw = seasonMatch[1] ? parseInt(seasonMatch[1], 10) : currentGw
+    if (isNaN(gw) || gw < 1 || gw > 38) {
+      return { chatId, text: '⚠️ *Invalid Gameweek:* Gameweek must be between 1 and 38.', options: { parse_mode: 'Markdown' } }
+    }
     try {
       const sMsg = await formatSeasonStandingsWhatsApp(gw)
       return { chatId, text: sMsg, options: { parse_mode: 'Markdown' } }
@@ -245,6 +262,9 @@ export async function processTelegramMessage(update) {
   if (text === '📋 Export WhatsApp Points' || text === '/export' || text === '/points' || text.match(/^\/points\s+(\d+)$/i)) {
     const customGwMatch = text.match(/^\/points\s+(\d+)$/i)
     const targetGw = customGwMatch ? parseInt(customGwMatch[1], 10) : currentGw
+    if (isNaN(targetGw) || targetGw < 1 || targetGw > 38) {
+      return { chatId, text: '⚠️ *Invalid Gameweek:* Gameweek must be between 1 and 38.', options: { parse_mode: 'Markdown' } }
+    }
 
     const replyText = `📋 *EXPORT WHATSAPP POINTS (GW${targetGw})*\n\n` +
       `Select a team or standings below, or tap *Export All* to send everything:`
@@ -264,6 +284,9 @@ export async function processTelegramMessage(update) {
   if (teamExportMatch) {
     const rawTarget = teamExportMatch[1].trim()
     const customGw = teamExportMatch[2] ? parseInt(teamExportMatch[2], 10) : currentGw
+    if (isNaN(customGw) || customGw < 1 || customGw > 38) {
+      return { chatId, text: '⚠️ *Invalid Gameweek:* Gameweek must be between 1 and 38.', options: { parse_mode: 'Markdown' } }
+    }
 
     if (rawTarget.toLowerCase() === 'all') {
       const allResults = await formatAllTeamsWhatsAppPoints(customGw)
@@ -298,7 +321,7 @@ export async function processTelegramMessage(update) {
 
   // 6. Handle Command: Help
   if (text === '❓ Help' || text === '/help') {
-    const replyText = `📖 *SLS Fantasy Admin Bot Guide:*\n\n` +
+    const replyText = `📖 *Fantasy Fortress Admin Bot Guide:*\n\n` +
       `• *Forward any WhatsApp lineup message* : Bot parses, auto-fills 11+4, and saves to Google Sheet.\n` +
       `• *📋 Export WhatsApp Points* : Generates WhatsApp-ready copy-paste cards for teams, GW standings & Season standings.\n` +
       `• */points all [gw]* : Export all 16 teams + GW & Season standings.\n` +
@@ -339,6 +362,20 @@ export async function processTelegramMessage(update) {
     // Step D: Validate formation and auto-fill any missing spots
     const validatedLineup = validateAndMatchRoster(finalParsed, officialSquad)
 
+    // Safety guard: reject saving if lineup has fewer than 11 starters
+    if (!validatedLineup || !validatedLineup.starters || validatedLineup.starters.length < 11) {
+      const identifiedCount = validatedLineup?.starters?.length || 0
+      const warningDetails = validatedLineup?.warnings?.length
+        ? `\n\n*Diagnostics:*\n` + validatedLineup.warnings.map((w) => `• ${w}`).join('\n')
+        : ''
+      return {
+        chatId,
+        text: `⚠️ *LINEUP REJECTED:* Only ${identifiedCount} / 11 starters identified for *${teamName}*.\n\n` +
+          `Refusing to save an incomplete lineup to the database. Please verify player names/formatting and submit again.${warningDetails}`,
+        options: { parse_mode: 'Markdown', ...getAdminKeyboard(currentGw) },
+      }
+    }
+
     // Step E: True UPSERT to Lineup_Rosters tab (Replaces existing team rows, 0 duplicates)
     await upsertLineupToSheet(validatedLineup)
 
@@ -347,8 +384,13 @@ export async function processTelegramMessage(update) {
     const isUpdate = submittedList.filter((t) => t.toLowerCase() === teamName.toLowerCase()).length > 0
     const missingCount = 16 - submittedList.length
 
+    const startingGk = (validatedLineup.starters || []).find(
+      (p) => (p.pos || '').toUpperCase() === 'GK' || (p.pos || '').toUpperCase() === 'GKP'
+    )
+
     let replyText = (isUpdate ? `✅ *SAVED & VALIDATED:* ` : `✅ *SAVED & VALIDATED:* `) +
       `*${teamName}* (GW${currentGw})\n` +
+      `🧤 Goalkeeper: *${startingGk ? startingGk.name : '⚠️ None'}*\n` +
       `📐 Formation: *${validatedLineup.formation}* ${validatedLineup.isFormationValid ? '✅' : '⚠️'}\n` +
       `👑 Captain: *${validatedLineup.captain}*\n` +
       `⚔️ Vice: *${validatedLineup.vice_captain}*\n\n`

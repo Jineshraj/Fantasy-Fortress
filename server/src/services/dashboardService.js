@@ -4,6 +4,7 @@ import { getGoogleAuth } from '../lib/auth.js'
 import { normalizeName, getSimilarityScore, cleanClubName, isSameClub, resolvePlayerDetails } from './rosterValidator.js'
 import { HOME_CLUB_ALIASES, matchHomeClub } from './stadiumService.js'
 import { getActiveGameweek } from './sheetsService.js'
+import { MASTER_TOP5_CLUBS } from './fixtureService.js'
 import { calculatePlayerPoints } from './sofaScoreSyncService.js'
 import { calculateApiFootballFantasyPoints } from './apiFootballSyncService.js'
 
@@ -188,7 +189,6 @@ export async function syncComparisonDashboard(targetGw) {
             minutes,
             goalsScored: goals,
             assists,
-            conceded: 0,
             penaltiesSaved: penSave,
             penaltiesMissed: penMiss,
             yellowCards: yellow,
@@ -257,7 +257,8 @@ export async function syncComparisonDashboard(targetGw) {
           playerAliasMap,
         })
         const pos = resolved.pos || playerPosMap.get(norm) || ''
-        sofaAggMap.set(key, { normName: norm, name: pName, club, pos, pts, penSave, matchCount: 1 })
+        const canonNorm = resolved.canonicalName ? normalizeName(resolved.canonicalName) : norm
+        sofaAggMap.set(key, { normName: norm, canonicalNorm: canonNorm, name: pName, club, pos, pts, penSave, matchCount: 1 })
       }
     }
   })
@@ -302,41 +303,12 @@ export async function syncComparisonDashboard(targetGw) {
           playerAliasMap,
         })
         const pos = resolved.pos || playerPosMap.get(norm) || ''
-        afAggMap.set(key, { normName: norm, name: pName, club, pos, pts, penSave, matchCount: 1 })
+        const canonNorm = resolved.canonicalName ? normalizeName(resolved.canonicalName) : norm
+        afAggMap.set(key, { normName: norm, canonicalNorm: canonNorm, name: pName, club, pos, pts, penSave, matchCount: 1 })
       }
     }
   })
   const apiFootballStatsList = Array.from(afAggMap.values())
-
-  const MASTER_TOP5_CLUBS = [
-    // Premier League
-    'Arsenal FC', 'Aston Villa', 'AFC Bournemouth', 'Brentford FC', 'Brighton & Hove Albion',
-    'Chelsea FC', 'Crystal Palace', 'Everton FC', 'Fulham FC', 'Hull City', 'Ipswich Town',
-    'Leeds United', 'Liverpool FC', 'Manchester City', 'Manchester United', 'Newcastle United',
-    'Nottingham Forest', 'Sunderland AFC', 'Tottenham Hotspur', 'West Ham United', 'Wolverhampton Wanderers',
-    'Coventry City',
-    // La Liga
-    'Athletic Bilbao', 'Atlético de Madrid', 'CA Osasuna', 'CD Leganés', 'Celta de Vigo',
-    'Deportivo Alavés', 'Deportivo de La Coruña', 'Elche CF', 'FC Barcelona', 'Getafe CF',
-    'Girona FC', 'Levante UD', 'Málaga CF', 'RCD Espanyol Barcelona', 'RCD Mallorca',
-    'Rayo Vallecano', 'Real Betis Balompié', 'Real Madrid', 'Real Sociedad', 'Real Valladolid CF',
-    'Sevilla FC', 'UD Las Palmas', 'Valencia CF', 'Villarreal CF', 'Real Racing Club', 'Racing Santander',
-    // Serie A
-    'AC Milan', 'AC Monza', 'AS Roma', 'Atalanta BC', 'Bologna FC 1909', 'Cagliari Calcio',
-    'Como 1907', 'Empoli FC', 'ACF Fiorentina', 'Frosinone Calcio', 'Genoa CFC', 'Hellas Verona',
-    'Inter Milan', 'Juventus FC', 'SS Lazio', 'US Lecce', 'SSC Napoli', 'Parma Calcio 1913',
-    'Torino FC', 'Udinese Calcio', 'Venezia FC', 'US Sassuolo',
-    // Ligue 1
-    'AJ Auxerre', 'Angers SCO', 'AS Monaco', 'AS Saint-Étienne', 'Clermont Foot 63', 'FC Lorient',
-    'FC Metz', 'FC Nantes', 'FC Toulouse', 'Havre AC', 'LOSC Lille', 'Montpellier HSC',
-    'OGC Nice', 'Olympique de Marseille', 'Olympique Lyon', 'Paris FC', 'Paris Saint-Germain',
-    'RC Lens', 'RC Strasbourg Alsace', 'Stade Brestois 29', 'Stade de Reims', 'Stade Rennais FC',
-    // Bundesliga (ADDED)
-    'FC Bayern München', 'Borussia Dortmund', 'RB Leipzig', 'Bayer 04 Leverkusen', 'VfB Stuttgart',
-    'Eintracht Frankfurt', 'VfL Wolfsburg', '1. FC Union Berlin', 'SC Freiburg', 'TSG 1899 Hoffenheim',
-    '1. FSV Mainz 05', 'Werder Bremen', 'FC Augsburg', 'Borussia Mönchengladbach', '1. FC Köln',
-    'FC St. Pauli', 'Hamburger SV', '1. FC Heidenheim',
-  ]
 
   function getClubRootToken(clubName) {
     const norm = normalizeName(clubName)
@@ -373,7 +345,7 @@ export async function syncComparisonDashboard(targetGw) {
       }
 
       const sameClub = club && sData.club ? fastIsSameClub(club, sData.club) : false
-      const isExactMatch = normName === sData.normName
+      const isExactMatch = normName === sData.normName || (sData.canonicalNorm && normName === sData.canonicalNorm)
 
       // If exact name match on same club, it's 100% authoritative - return immediately!
       if (isExactMatch && sameClub) {

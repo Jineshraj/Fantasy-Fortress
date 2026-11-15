@@ -136,10 +136,15 @@ export async function fetchTop5MatchesByDate(dateStr, gameweek = 2) {
 
   return top5Matches.map((ev) => {
     const league = ev.tournament?.name || 'Top 5'
-    const statusType = ev.status?.type || 'notstarted'
+    const statusType = String(ev.status?.type || 'notstarted').toLowerCase()
     let status = 'SCHEDULED'
     if (statusType === 'finished') status = 'FINISHED'
     else if (statusType === 'inprogress') status = 'LIVE'
+    else if (statusType === 'postponed') status = 'POSTPONED'
+    else if (statusType === 'canceled' || statusType === 'cancelled') status = 'CANCELLED'
+    else if (statusType === 'abandoned') status = 'ABANDONED'
+    else if (statusType === 'awarded') status = 'AWARDED'
+    else if (statusType === 'suspended') status = 'SUSPENDED'
 
     const homeScore = ev.homeScore?.current !== undefined ? ev.homeScore.current : ev.homeScore?.display !== undefined ? ev.homeScore.display : ''
     const awayScore = ev.awayScore?.current !== undefined ? ev.awayScore.current : ev.awayScore?.display !== undefined ? ev.awayScore.display : ''
@@ -403,7 +408,15 @@ export async function upsertFixturesToSheet(newFixtures = [], apiFootballMatches
     const awayClub = getCanonicalClubName(afAwayRaw)
     const afLeague = String(af.league?.name || 'Top 5')
     const afDate = String(af.fixture?.date || '').split('T')[0]
-    const afStatus = af.fixture?.status?.short === 'FT' ? 'FINISHED' : 'SCHEDULED'
+    const afShort = String(af.fixture?.status?.short || '').toUpperCase()
+    let afStatus = 'SCHEDULED'
+    if (afShort === 'FT' || afShort === 'AET' || afShort === 'PEN') afStatus = 'FINISHED'
+    else if (afShort === '1H' || afShort === 'HT' || afShort === '2H' || afShort === 'ET' || afShort === 'P' || afShort === 'BT' || afShort === 'LIVE') afStatus = 'LIVE'
+    else if (afShort === 'PST') afStatus = 'POSTPONED'
+    else if (afShort === 'CANC') afStatus = 'CANCELLED'
+    else if (afShort === 'ABD') afStatus = 'ABANDONED'
+    else if (afShort === 'AWD' || afShort === 'WO') afStatus = 'AWARDED'
+    else if (afShort === 'SUSP') afStatus = 'SUSPENDED'
     const homeScore = af.goals?.home !== undefined && af.goals?.home !== null ? String(af.goals.home) : ''
     const awayScore = af.goals?.away !== undefined && af.goals?.away !== null ? String(af.goals.away) : ''
     const gwStr = String(af.gameweek || targetGameweek || '2')
@@ -414,7 +427,7 @@ export async function upsertFixturesToSheet(newFixtures = [], apiFootballMatches
     if (fixtureMap.has(key)) {
       const existing = fixtureMap.get(key)
       existing.afId = afId || existing.afId
-      if (afStatus === 'FINISHED') existing.status = 'FINISHED'
+      if (afStatus !== 'SCHEDULED') existing.status = afStatus
       if (homeScore !== '') existing.homeScore = homeScore
       if (awayScore !== '') existing.awayScore = awayScore
     } else if (afId) {

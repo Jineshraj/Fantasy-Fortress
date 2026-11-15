@@ -28,9 +28,15 @@ import { normalizeName } from './rosterValidator.js'
 import { resolveExactTabName } from './sheetsService.js'
 import { getGwColumnRange } from './scoringEngine.js'
 
-const ssId = process.env.GOOGLE_SHEET_ID
-const auth = getGoogleAuth()
-const sheets = google.sheets({ version: 'v4', auth })
+let _sheets = null
+function getSheets() {
+  if (!_sheets) {
+    const auth = getGoogleAuth()
+    _sheets = google.sheets({ version: 'v4', auth })
+  }
+  return _sheets
+}
+const getSsId = () => process.env.GOOGLE_SHEET_ID
 
 export const H2H_GWS = [3, 4, 6, 7, 9, 10, 12, 13, 14, 16, 17, 18, 19, 20]
 
@@ -55,8 +61,8 @@ export async function getTeamH2HScores(targetGw) {
   const allTeams = [...groupATeams, ...groupBTeams]
   const ranges = allTeams.map((team) => `'${resolveExactTabName(team)}'!${getGwColumnRange(targetGw)}`)
 
-  const res = await sheets.spreadsheets.values.batchGet({
-    spreadsheetId: ssId,
+  const res = await getSheets().spreadsheets.values.batchGet({
+    spreadsheetId: getSsId(),
     ranges,
   })
 
@@ -100,8 +106,8 @@ export async function getTeamH2HScores(targetGw) {
 // ────────────────────────────────────────────────────────────────────
 
 export async function readLineupsForGw(targetGw) {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: ssId,
+  const res = await getSheets().spreadsheets.values.get({
+    spreadsheetId: getSsId(),
     range: 'Lineup_Rosters!A1:H',
   })
   const rows = res.data.values || []
@@ -135,8 +141,8 @@ export async function readLineupsForGw(targetGw) {
 }
 
 export async function readDashboardForGw(targetGw) {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: ssId,
+  const res = await getSheets().spreadsheets.values.get({
+    spreadsheetId: getSsId(),
     range: 'Comparison_Dashboard!A1:J',
   })
   const rows = res.data.values || []
@@ -232,8 +238,8 @@ export function computeTeamScore(roster, dashboardPts) {
  *   S (7): Winner
  */
 export async function readH2HFixtures() {
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: ssId,
+  const res = await getSheets().spreadsheets.values.get({
+    spreadsheetId: getSsId(),
     range: 'H2H_League!L4:S115',
   })
   const rows = res.data.values || []
@@ -326,8 +332,8 @@ export async function syncH2HForGw(targetGw, { dryRun = false } = {}) {
   }
 
   if (updates.length > 0) {
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: ssId,
+    await getSheets().spreadsheets.values.batchUpdate({
+      spreadsheetId: getSsId(),
       requestBody: { valueInputOption: 'USER_ENTERED', data: updates },
     })
     console.log(`[H2H] ✅ GW${targetGw}: wrote ${updates.length} match score/winner cells`)
@@ -453,8 +459,8 @@ export async function recalculateH2HStandings({ dryRun = false } = {}) {
   })
 
   if (updateData.length > 0) {
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId: ssId,
+    await getSheets().spreadsheets.values.batchUpdate({
+      spreadsheetId: getSsId(),
       requestBody: { valueInputOption: 'USER_ENTERED', data: updateData },
     })
   }
@@ -513,8 +519,8 @@ export async function generateH2HKnockoutBracket({ dryRun = false } = {}) {
     }
   }
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: ssId,
+  await getSheets().spreadsheets.values.update({
+    spreadsheetId: getSsId(),
     range: 'H2H_League!A27:G35',
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: playoffRows },

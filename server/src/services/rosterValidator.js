@@ -145,10 +145,10 @@ export function getSimilarityScore(rawInput, officialName) {
     if (inWord.length >= 3) {
       if (officialWords.some((w) => w === inWord)) {
         matchingTokens += 1
-      } else if (officialWords.some((w) => w.startsWith(inWord) || inWord.startsWith(w))) {
+      } else if (officialWords.some((w) => w.length >= 3 && (w.startsWith(inWord) || inWord.startsWith(w)))) {
         // Prefix matching e.g. 'cucu' -> 'cucurella', 'kvara' -> 'kvaratskhelia', 'mittel' -> 'mittelstadt'
         matchingTokens += 0.9
-      } else if (officialWords.some((w) => levenshteinDistance(inWord, w) <= 2 && Math.abs(inWord.length - w.length) <= 2)) {
+      } else if (officialWords.some((w) => w.length >= 3 && levenshteinDistance(inWord, w) <= 2 && Math.abs(inWord.length - w.length) <= 2)) {
         // e.g. 'oriley' -> 'oreilly', 'horneck' -> 'hornicek'
         matchingTokens += 0.85
       }
@@ -334,7 +334,9 @@ export function validateAndMatchRoster(extractedLineup, officialTeamSquad = []) 
   const warnings = []
 
   // Helper function to find best matching official squad player
-  const findBestMatch = (rawName) => {
+  const findBestMatch = (rawInput, defaultPos = null) => {
+    const rawName = typeof rawInput === 'string' ? rawInput : rawInput?.name
+    const fallbackPos = (typeof rawInput === 'object' && rawInput?.pos) || defaultPos || 'MID'
     if (!rawName || isPlaceholder(rawName)) return null
     let bestPlayer = null
     let highestScore = 0
@@ -358,38 +360,80 @@ export function validateAndMatchRoster(extractedLineup, officialTeamSquad = []) 
     }
 
     warnings.push(`Could not match '${rawName}' to official squad.`)
-    return { name: rawName, pos: 'MID', matched: false }
+    return { name: rawName, pos: fallbackPos, matched: false }
   }
 
-  // 1. Filter out placeholder words and match real starters
+  // 1. Filter out placeholder words and match real starters with deduplication
+  const rawMatchedStarters = []
   starters.forEach((rawStarter) => {
     const rawName = typeof rawStarter === 'string' ? rawStarter : rawStarter?.name
     if (rawName && !isPlaceholder(rawName)) {
-      const match = findBestMatch(rawName)
-      if (match) matchedStarters.push(match)
+      const match = findBestMatch(rawStarter)
+      if (match) rawMatchedStarters.push(match)
     }
   })
 
-  // 2. Filter out placeholder words and match real bench
+  const seenStarterNames = new Set()
+  for (const s of rawMatchedStarters) {
+    const norm = normalizeName(s.name)
+    if (!seenStarterNames.has(norm)) {
+      seenStarterNames.add(norm)
+      matchedStarters.push(s)
+    } else {
+      warnings.push(`Duplicate starter '${s.name}' removed from starters.`)
+    }
+  }
+
+  // 2. Filter out placeholder words and match real bench with deduplication (cannot overlap with starters)
+  const rawMatchedBench = []
   bench.forEach((rawBench) => {
     const rawName = typeof rawBench === 'string' ? rawBench : rawBench?.name
     if (rawName && !isPlaceholder(rawName)) {
-      const match = findBestMatch(rawName)
-      if (match) matchedBench.push(match)
+      const match = findBestMatch(rawBench)
+      if (match) rawMatchedBench.push(match)
     }
   })
 
+  const seenBenchNames = new Set()
+  for (const b of rawMatchedBench) {
+    const norm = normalizeName(b.name)
+    if (seenStarterNames.has(norm)) {
+      warnings.push(`Duplicate player '${b.name}' detected in both Starters and Bench. Removed from Bench.`)
+    } else if (!seenBenchNames.has(norm)) {
+      seenBenchNames.add(norm)
+      matchedBench.push(b)
+    } else {
+      warnings.push(`Duplicate bench player '${b.name}' removed from bench.`)
+    }
+  }
+
   // 3. Auto-Fill if Incomplete (< 11 Starters or < 4 Bench)
+  // Safety guard: only auto-fill if at least 7 starters were legitimately matched.
+  // Never auto-fill an empty or near-empty lineup from scratch.
   let finalStarters = matchedStarters
   let finalBench = matchedBench
   let autoFillNotices = []
 
-  if (officialTeamSquad.length > 0 && (matchedStarters.length < 11 || matchedBench.length < 4)) {
+  if (officialTeamSquad.length > 0 && matchedStarters.length >= 7 && (matchedStarters.length < 11 || matchedBench.length < 4)) {
     const autoFilled = autoFillIncompleteLineup(matchedStarters, matchedBench, officialTeamSquad)
     finalStarters = autoFilled.starters
     finalBench = autoFilled.bench
     autoFillNotices = autoFilled.notices
+  } else if (matchedStarters.length > 0 && matchedStarters.length < 7) {
+    warnings.push(`Only ${matchedStarters.length} starters identified. Refusing to auto-fill full lineup without confirmation.`)
   }
+
+  // Strict post-processing uniqueness guarantee across starters and bench
+  const finalStarterSet = new Set(finalStarters.map((p) => normalizeName(p.name)))
+  finalBench = finalBench.filter((b) => {
+    const norm = normalizeName(b.name)
+    if (finalStarterSet.has(norm)) {
+      warnings.push(`Duplicate removed: '${b.name}' cannot be on both Starters and Bench.`)
+      return false
+    }
+    return true
+  })
+
 
   // 4. Validate Formation
   const formationCheck = validateFormation(finalStarters)

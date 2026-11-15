@@ -156,6 +156,23 @@ export function FantasyApp() {
   const teams = boot.data?.standings?.teams ?? []
   const latestGw = boot.data?.standings?.latestGw ?? 1
 
+  // Gameweek lives in the URL (?gw=N). Invalid values fall back to the latest
+  // scored week and are rewritten out of the address bar.
+  const gw = clampGw(searchParams.get('gw'), latestGw)
+
+  const setGw = useCallback(
+    (next) => {
+      const currentVal = clampGw(searchParams.get('gw'), latestGw)
+      const resolved = typeof next === 'function' ? next(currentVal) : next
+      const params = new URLSearchParams(searchParams)
+      params.set('gw', String(resolved))
+      // replace: paging weeks is a view option, not history. 3→4→5 should not
+      // cost three back-button presses.
+      setSearchParams(params, { replace: true })
+    },
+    [searchParams, setSearchParams, latestGw]
+  )
+
   // Background refresh. Deliberately keeps the current data on screen while the
   // request is in flight, so refreshing never blanks the UI. A failure is
   // swallowed — stale data plus a working retry beats an empty screen.
@@ -171,7 +188,7 @@ export function FantasyApp() {
         /* keep what we have; the stamp still shows its age */
       })
       .finally(() => setRefreshing(false))
-  }, [refreshing])
+  }, [refreshing, setGw])
 
   // Pick up a nightly sync that landed while the tab was in the background.
   // Throttled so alt-tabbing doesn't hammer the database.
@@ -189,9 +206,6 @@ export function FantasyApp() {
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [stage, boot.data, runRefresh])
 
-  // Gameweek lives in the URL (?gw=N). Invalid values fall back to the latest
-  // scored week and are rewritten out of the address bar.
-  const gw = clampGw(searchParams.get('gw'), latestGw)
   useEffect(() => {
     if (stage !== 'hub' || !boot.data) return
     const raw = searchParams.get('gw')
@@ -203,18 +217,7 @@ export function FantasyApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, gw, searchParams, boot.data])
 
-  const setGw = useCallback(
-    (next) => {
-      const params = new URLSearchParams(searchParams)
-      params.set('gw', String(next))
-      // replace: paging weeks is a view option, not history. 3→4→5 should not
-      // cost three back-button presses.
-      setSearchParams(params, { replace: true })
-    },
-    [searchParams, setSearchParams]
-  )
-
-  const stamp = useMemo(
+  const stampInfo = useMemo(
     () => (boot.data ? stampFrom(boot.data.standings.updatedAt, latestGw) : null),
     [boot.data, latestGw]
   )
@@ -262,7 +265,8 @@ export function FantasyApp() {
     <main className="app-shell">
       <ScrollRestoration />
       <Header
-        stamp={null}
+        stamp={stampInfo?.text ?? null}
+        stampStale={stampInfo?.stale ?? false}
         onRefresh={runRefresh}
         refreshing={refreshing}
         competitions={COMPETITIONS}

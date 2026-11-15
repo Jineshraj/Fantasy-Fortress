@@ -13,11 +13,8 @@ export const BRAND = {
   full: 'Fantasy Fortress · Season 2',
 }
 
-// League logo lives in client/public/Fantasy Fortress/ (the space is
-// URL-encoded — browsers do this automatically, and Vite serves it fine).
-export const LOGO_SRC = '/Fantasy%20Fortress/Fantasy-fortress-logo.png'
-
-export const FAVICON_SRC = '/Fantasy-fortress-logo.png'
+// League logo lives in client/public/
+export const LOGO_SRC = '/Fantasy-fortress-logo.png'
 
 // The crest carries its own "FANTASY FORTRESS" wordmark, so the header shows
 // the mark plus a season badge rather than repeating the full name.

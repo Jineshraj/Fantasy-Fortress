@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { getPlayerImageUrl } from '@/data/playerImages'
 import { LayeredMedia } from './Media'
 
@@ -8,9 +9,10 @@ import { LayeredMedia } from './Media'
  */
 export function PlayerPhoto({ player, className = 'player-photo-wrap' }) {
   const url = getPlayerImageUrl(player)
+  const candidates = useMemo(() => (url ? [url] : []), [url])
   return (
     <LayeredMedia
-      candidates={url ? [url] : []}
+      candidates={candidates}
       resetKey={url || player?.name || ''}
       className={className}
       imgClassName="player-photo"
@@ -29,9 +31,10 @@ export function PlayerPhoto({ player, className = 'player-photo-wrap' }) {
  * until those are synced.
  */
 export function ClubMark({ code, url }) {
+  const candidates = useMemo(() => (url ? [url] : []), [url])
   return (
     <LayeredMedia
-      candidates={url ? [url] : []}
+      candidates={candidates}
       resetKey={url || code}
       className="club-mark"
       imgClassName="club-badge"

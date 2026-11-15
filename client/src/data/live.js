@@ -43,7 +43,12 @@ async function loadAll(table, select, order) {
     throw new DataError('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.', { table })
   }
   let query = supabase.from(table).select(select)
-  if (order) query = query.order(order.column, { ascending: order.ascending !== false })
+  if (order) {
+    query = query.order(order.column, { ascending: order.ascending !== false })
+    if (order.column !== 'id') {
+      query = query.order('id', { ascending: true })
+    }
+  }
   // paginate past the default 1000-row window
   const rows = []
   const pageSize = 1000
@@ -184,9 +189,14 @@ async function fetchAllPlayerStats() {
       `${baseSelect},points_breakdown,match_breakdown`,
       { column: 'gameweek' }
     )
-  } catch {
-    // Graceful fallback when points_breakdown and match_breakdown columns are not yet applied to Supabase
-    rows = await loadAll('player_gameweek_stats', baseSelect, { column: 'gameweek' })
+  } catch (err) {
+    // Graceful fallback ONLY when points_breakdown/match_breakdown columns are missing from the schema
+    const msg = String(err?.message || err?.cause?.message || '').toLowerCase()
+    if (msg.includes('column') || msg.includes('does not exist') || err?.code === 'PGRST204') {
+      rows = await loadAll('player_gameweek_stats', baseSelect, { column: 'gameweek' })
+    } else {
+      throw err
+    }
   }
   cache.pstats = rows
   return rows
@@ -269,11 +279,24 @@ const opponentLookup = (fixtures, gw) => {
   const list = fixtures.filter((f) => f.gw === gw)
   return (club) => {
     if (!club) return null
-    for (const f of list) {
-      if (isSameClub(club, f.homeName)) return { name: f.awayName, code: f.away, venue: 'home' }
-      if (isSameClub(club, f.awayName)) return { name: f.homeName, code: f.home, venue: 'away' }
+    const clubFixtures = list.filter(
+      (f) => isSameClub(club, f.homeName) || isSameClub(club, f.awayName)
+    )
+    if (clubFixtures.length === 0) return null
+
+    const f = clubFixtures[0]
+    const isHome = isSameClub(club, f.homeName)
+    return {
+      name: isHome ? f.awayName : f.homeName,
+      code: isHome ? f.away : f.home,
+      venue: isHome ? 'home' : 'away',
+      status: f.status,
+      kickoff: f.kickoff,
+      fixtureCount: clubFixtures.length,
+      allScheduled: clubFixtures.every((x) => x.status === 'SCHEDULED'),
+      hasLive: clubFixtures.some((x) => x.status === 'LIVE'),
+      allFinished: clubFixtures.every((x) => x.status === 'FINISHED'),
     }
-    return null
   }
 }
 
@@ -284,6 +307,7 @@ const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
   const isEffectiveStarter = Boolean(row.is_effective_starter)
   const displayState = displayStateOf(role)
   const points = row.final_points ?? 0
+  const opponent = opponentOf(club)
 
   return {
     name: row.player_name,
@@ -305,7 +329,8 @@ const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
     displayState,
     isEffectiveStarter,
     captaincy: buildCaptaincy(row.player_name, ctx, row.multiplier),
-    opponent: opponentOf(club),
+    opponent,
+    yetToPlay: Boolean(opponent?.allScheduled),
     cleanSheet: Boolean(row.clean_sheet),
     yellowCards: row.yellow_cards ?? 0,
     redCards: row.red_cards ?? 0,
@@ -500,6 +525,8 @@ export async function fetchPlayerDetail(playerName, teamName, gw) {
     (f) => f.gw === gw && club && (isSameClub(club, f.homeName) || isSameClub(club, f.awayName))
   )
   const isDouble = clubFixtures.length === 2
+  const yetToPlay =
+    clubFixtures.length > 0 && clubFixtures.every((f) => f.status === 'SCHEDULED')
 
   const shellFromFixture = (f) => {
     const isHome = isSameClub(club, f.homeName)
@@ -639,6 +666,7 @@ export async function fetchPlayerDetail(playerName, teamName, gw) {
     isEffectiveStarter: Boolean(row.is_effective_starter),
     displayState: displayStateOf(row.role),
     role: row.role,
+    yetToPlay,
   }
 }
 
@@ -743,7 +771,11 @@ export async function fetchGameweekStatus(gw) {
   const list = fixtures.filter((f) => f.gw === gw)
   if (list.length === 0) return null
   if (list.some((f) => f.status === 'LIVE')) return 'Gameweek Live'
-  if (list.every((f) => f.status === 'FINISHED' || f.score)) return 'Final'
+  const TERMINAL_STATUSES = new Set([
+    'FINISHED', 'POSTPONED', 'CANCELLED', 'CANCELED',
+    'ABANDONED', 'AWARDED', 'VOID', 'SUSPENDED',
+  ])
+  if (list.every((f) => TERMINAL_STATUSES.has(f.status))) return 'Final'
   return 'Awaiting scores'
 }
 
@@ -857,7 +889,6 @@ export async function scoredGameweeks() {
 // Returns a decorated H2H week: each match gets homeGw/awayGw + winner.
 export async function buildH2HWeek(week) {
   const scores = await fetchH2HScores()
-  if (scores.size === 0) throw new Error('No team scores synced yet')
   return {
     gw: week.gw,
     matches: week.matches.map((m) => {
@@ -881,7 +912,6 @@ const sortTable = (a, b) =>
 // Standings per group derived from all played H2H group matches.
 export async function buildH2HStandings(weeks) {
   const scores = await fetchH2HScores()
-  if (scores.size === 0) throw new Error('No team scores synced yet')
   const playedWeeks = weeks.filter((w) =>
     w.matches.some(
       (m) => scores.has(`GW${w.gw}:${m.home}`) && scores.has(`GW${w.gw}:${m.away}`)
@@ -925,7 +955,6 @@ export async function buildH2HStandings(weeks) {
 // Super Cup: resolve winners through the bracket using each stage's gameweek.
 export async function buildSuperCup() {
   const scores = await fetchH2HScores()
-  if (scores.size === 0) throw new Error('No team scores synced yet')
 
   const winnerOf = new Map()
   const matchById = new Map(SUPER_CUP_R16.map((m) => [m.id, m]))
@@ -966,7 +995,11 @@ export async function buildSuperCup() {
   return { rounds, champion }
 }
 
-export function clearLiveCache() {
+export function clearLiveCache(key) {
+  if (key && key in cache) {
+    cache[key] = null
+    return
+  }
   cache.standings = null
   cache.players = null
   cache.teams = null

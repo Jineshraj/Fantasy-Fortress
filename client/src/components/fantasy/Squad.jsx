@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, Settings2, TriangleAlert, UserSearch } from 'lucide-react'
-import { fetchGameweekStatus, fetchTeamSquad } from '@/data/live'
+import { clearLiveCache, fetchGameweekStatus, fetchTeamSquad } from '@/data/live'
 import { PlayerPhoto } from './Imagery'
 import { TeamMark } from './TeamMark'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
 import { SearchBox } from '@/components/ui/SearchBox'
 import { KEYS, getStored, setStored } from '@/lib/storage'
+import { cn } from '@/lib/utils'
 
 const GROUPS = ['GKP', 'DEF', 'MID', 'FWD']
 const normPos = (pos) => (pos === 'GK' ? 'GKP' : pos)
@@ -38,8 +39,9 @@ export function Squad({ teams, gw }) {
   const canSwitchTeams = teamOptions.length > 1
   const q = query.trim().toLowerCase()
 
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     if (!activeTeam) return
+    if (force) clearLiveCache('pstats')
     setState({ status: 'loading', squad: null, error: null })
     fetchTeamSquad(activeTeam, gw)
       .then((squad) =>
@@ -130,7 +132,7 @@ export function Squad({ teams, gw }) {
           <div className="squad-identity-copy">
             <h1 title={activeTeam || undefined}>{activeTeam || 'Squad'}</h1>
             <p className="squad-identity-meta">
-              Rank #{rank ?? '–'} · {activeMeta?.manager || 'Manager unavailable'}
+              Rank #{rank ?? '–'} · {seasonTotal ?? 0} pts
             </p>
           </div>
         </div>
@@ -167,7 +169,7 @@ export function Squad({ teams, gw }) {
 
       {state.status === 'loading' && <LoadingBlock label="Loading squad" rows={5} />}
 
-      {state.status === 'error' && <InlineError message={state.error} onRetry={load} />}
+      {state.status === 'error' && <InlineError message={state.error} onRetry={() => load(true)} />}
 
       {state.status === 'empty' && (
         <EmptyState
@@ -229,7 +231,12 @@ export function Squad({ teams, gw }) {
                               </span>
                             </span>
                             <span className="numeric">{p.season}</span>
-                            <strong className="numeric">{p.points}</strong>
+                            <strong
+                              className={cn('numeric', p.yetToPlay && 'is-yet-to-play')}
+                              title={p.yetToPlay ? 'Yet to play' : undefined}
+                            >
+                              {p.yetToPlay ? 'YTP' : p.points}
+                            </strong>
                           </div>
                         ))}
                       </div>

@@ -590,7 +590,8 @@ export async function syncSofaScoreStaging(targetGw) {
         // team-level score when incidents are empty (otherwise we'd deny CS
         // to players who were correctly subbed off before a goal).
         const incidentsAreEmpty = effectiveMatchGoals.length === 0
-        let isCleanSheet = minutes >= 60 && opponentGoalsOnPitchFromIncidents === 0
+        const isDefOrGk = fantasyPos === 'GK' || fantasyPos === 'GKP' || fantasyPos === 'DEF'
+        let isCleanSheet = isDefOrGk && minutes >= 60 && opponentGoalsOnPitchFromIncidents === 0
         // Safety net: if authoritative score indicates team conceded >= 1:
         // 1. If incidents are empty, always invalidate CS.
         // 2. If player played full match (not subbed out, minutes >= 60), player was on pitch at FT and conceded.

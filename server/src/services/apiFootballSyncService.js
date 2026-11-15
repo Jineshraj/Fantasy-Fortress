@@ -1,7 +1,10 @@
 import 'dotenv/config'
 import { google } from 'googleapis'
 import { getGoogleAuth } from '../lib/auth.js'
+import fs from 'fs'
+import path from 'path'
 import { normalizeName, getSimilarityScore, cleanClubName, isSameClub, resolvePlayerPosition, resolvePlayerDetails } from './rosterValidator.js'
+import { calculatePlayerPoints } from './scoringRules.js'
 import { SIMILARITY_THRESHOLDS } from '../lib/constants.js'
 
 const spreadsheetId = process.env.GOOGLE_SHEET_ID || '1smqnbGD0chXTYLRepUrmiQePc5zuMdQu4AFaASZZRcU'
@@ -20,13 +23,12 @@ export const TOP_5_LEAGUES = {
 const TOP_5_LEAGUE_IDS_SET = new Set(Object.values(TOP_5_LEAGUES))
 
 /**
- * Fantasy Scoring Formula for API-Football (exact mirror of tournament rules)
+ * Fantasy Scoring Formula for API-Football (delegates to authoritative scoringRules.js)
  */
 export function calculateApiFootballFantasyPoints({
   minutes = 0,
   goalsScored = 0,
   assists = 0,
-  conceded = 0,
   penaltiesSaved = 0,
   penaltiesMissed = 0,
   yellowCards = 0,
@@ -35,57 +37,20 @@ export function calculateApiFootballFantasyPoints({
   isCleanSheet = false,
   pos = 'MID',
 }) {
-  let points = 0
-
-  // 1. Appearance Points
-  if (minutes >= 60) {
-    points += 2
-  } else if (minutes > 0) {
-    points += 1
-  } else {
-    return 0 // Did not play
-  }
-
-  // 2. Goal Scoring Points
-  if (pos === 'GKP' || pos === 'GK' || pos === 'G') {
-    points += goalsScored * 10
-  } else if (pos === 'DEF' || pos === 'D') {
-    points += goalsScored * 6
-  } else if (pos === 'MID' || pos === 'M') {
-    points += goalsScored * 5
-  } else {
-    // Forward
-    points += goalsScored * 4
-  }
-
-  // 3. Assists
-  if (pos === 'GKP' || pos === 'GK' || pos === 'G') {
-    points += assists * 5
-  } else {
-    points += assists * 3
-  }
-
-  // 4. Clean Sheets (GKP/GK/G and DEF/D only, >= 60 min, sub-aware 0 goals conceded)
-  if (isCleanSheet) {
-    if (pos === 'GKP' || pos === 'GK' || pos === 'G') points += 5
-    else if (pos === 'DEF' || pos === 'D') points += 4
-  }
-
-  // 5. Penalties
-  points += penaltiesSaved * 5
-  points -= penaltiesMissed * 3
-
-  // 6. Cards & Own Goals
-  points -= yellowCards * 1
-  points -= redCards * 3
-  points -= ownGoals * 2
-
-  // 7. Hat-trick Bonus (+3 if 3+ goals OR 3+ assists)
-  if (goalsScored >= 3 || assists >= 3) {
-    points += 3
-  }
-
-  return points
+  return calculatePlayerPoints(
+    {
+      minutes,
+      goals: goalsScored,
+      assists,
+      pen_save: penaltiesSaved,
+      pen_miss: penaltiesMissed,
+      yellow: yellowCards,
+      red: redCards,
+      own_goals: ownGoals,
+      clean_sheet: isCleanSheet,
+    },
+    pos
+  )
 }
 
 /**
@@ -125,6 +90,19 @@ export async function fetchTop5FixturesByDate(dateStr) {
 export async function fetchFixtureDetailsById(fixtureId, retries = 4) {
   if (!apiFootballKey) return null
 
+  const cacheDir = path.resolve(process.cwd(), 'server/data/af_cache')
+  const cacheFile = path.join(cacheDir, `${fixtureId}.json`)
+  if (fs.existsSync(cacheFile)) {
+    try {
+      const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'))
+      const shortStatus = String(cached?.fixture?.status?.short || '').toUpperCase()
+      const isTerminal = shortStatus === 'FT' || shortStatus === 'AET' || shortStatus === 'PEN'
+      if (cached && cached.fixture && isTerminal) {
+        return cached
+      }
+    } catch {}
+  }
+
   const url = `${BASE_URL}/fixtures?id=${fixtureId}`
   console.log(`[API-Football API] 📥 Fetching all-in-one match data for fixture ID ${fixtureId}...`)
 
@@ -145,7 +123,14 @@ export async function fetchFixtureDetailsById(fixtureId, retries = 4) {
           continue
         }
       }
-      return data.response?.[0] || null
+      const match = data.response?.[0] || null
+      if (match && match.fixture) {
+        try {
+          fs.mkdirSync(cacheDir, { recursive: true })
+          fs.writeFileSync(cacheFile, JSON.stringify(match, null, 2))
+        } catch {}
+      }
+      return match
     } catch (err) {
       console.error(`[API-Football] Error fetching fixture ${fixtureId} (attempt ${attempt + 1}):`, err.message)
       if (attempt < retries) {
@@ -338,9 +323,11 @@ export async function syncApiFootballGameweekStats(gameweek = 2, dateList = [], 
       continue
     }
 
+    const cacheFile = path.join(path.resolve(process.cwd(), 'server/data/af_cache'), `${fixtureId}.json`)
+    const wasCached = fs.existsSync(cacheFile)
     const matchData = await fetchFixtureDetailsById(fixtureId)
-    // 6.2s delay between requests to strictly respect API-Football's 10 req/min rate limit
-    if (i < neededFixtureIds.length - 1) {
+    // 6.2s delay between requests to strictly respect API-Football's 10 req/min rate limit (only for network calls)
+    if (!wasCached && i < neededFixtureIds.length - 1) {
       const throttleMs = Number(process.env.API_FOOTBALL_THROTTLE_MS || 6200)
       await new Promise((r) => setTimeout(r, throttleMs))
     }
@@ -374,7 +361,6 @@ export async function syncApiFootballGameweekStats(gameweek = 2, dateList = [], 
     const subOutEvents = [] // { afPlayerId, minute, eventIdx }
     const ownGoalCount = new Map()      // afPlayerId -> count of own goals
     const penaltyMissCount = new Map()  // afPlayerId -> count of missed penalties
-    const penaltySaveCount = new Map()  // afPlayerId -> count of saved penalties (GKs)
     for (let evIdx = 0; evIdx < (matchData.events || []).length; evIdx++) {
       const ev = matchData.events[evIdx]
       if (ev.type === 'Goal' && ev.team?.id && ev.time?.elapsed != null) {
@@ -450,7 +436,7 @@ export async function syncApiFootballGameweekStats(gameweek = 2, dateList = [], 
         // NOT from stats.goals.owngoals (which is missing in the API response).
         const ownGoals = ownGoalCount.get(afPlayerId) || 0
         const penaltiesMissed = penaltyMissCount.get(afPlayerId) ?? Number(stats.penalty?.missed || 0)
-        const penaltiesSaved = penaltySaveCount.get(afPlayerId) ?? Number(stats.penalty?.saved || 0)
+        const penaltiesSaved = Number(stats.penalty?.saved || 0)
         // Source-of-truth: team score is ground truth
         const finalConceded = teamConceded
 

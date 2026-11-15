@@ -36,9 +36,43 @@ const server = http.createServer(async (req, res) => {
 
   // 2. Telegram Webhook Endpoint
   if (url.pathname === '/webhook/telegram' && req.method === 'POST') {
+    const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET
+    if (!webhookSecret) {
+      console.error('[Security] TELEGRAM_WEBHOOK_SECRET is not configured! Denying webhook request.')
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Unauthorized: TELEGRAM_WEBHOOK_SECRET is required' }))
+      return
+    }
+
+    const headerSecret = req.headers['x-telegram-bot-api-secret-token']
+    if (headerSecret !== webhookSecret) {
+      res.writeHead(401, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Unauthorized: Invalid Telegram webhook secret' }))
+      return
+    }
+
+    const contentType = req.headers['content-type'] || ''
+    if (!contentType.includes('application/json')) {
+      res.writeHead(415, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Unsupported Media Type: Expected application/json' }))
+      return
+    }
+
     let body = ''
-    req.on('data', (chunk) => (body += chunk))
+    let bodyTooLarge = false
+    const MAX_BODY_SIZE = 1e6 // 1MB max payload
+
+    req.on('data', (chunk) => {
+      body += chunk
+      if (body.length > MAX_BODY_SIZE) {
+        bodyTooLarge = true
+        res.writeHead(413, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Payload too large' }))
+        req.destroy()
+      }
+    })
     req.on('end', async () => {
+      if (bodyTooLarge) return
       try {
         const update = JSON.parse(body)
         const result = await processTelegramMessage(update)
@@ -67,21 +101,26 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // 3. Automated External Cron Trigger Endpoint (For Cron-Job.org / Render Cron) (Fixes HIGH-10)
+  // 3. Automated External Cron Trigger Endpoint (For Cron-Job.org / Render Cron) (Fixes HIGH-10 & P0-2)
   if ((url.pathname === '/api/sync' || url.pathname === '/cron/sync') && (req.method === 'POST' || req.method === 'GET')) {
     const cronSecret = process.env.CRON_SECRET
     const authHeader = req.headers['authorization'] || ''
     const secretParam = url.searchParams.get('secret') || ''
 
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}` && secretParam !== cronSecret) {
+    if (!cronSecret || (authHeader !== `Bearer ${cronSecret}` && secretParam !== cronSecret)) {
       res.writeHead(401, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'Unauthorized: Invalid CRON_SECRET' }))
+      res.end(JSON.stringify({ error: 'Unauthorized: Valid CRON_SECRET is required' }))
       return
     }
 
     const gwParam = url.searchParams.get('gw')
     try {
       const targetGw = gwParam ? Number(gwParam) : await getActiveGameweek()
+      if (isNaN(targetGw) || targetGw < 1 || targetGw > 38) {
+        res.writeHead(400, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Invalid gameweek parameter. Must be between 1 and 38.' }))
+        return
+      }
       console.log(`[HTTP Trigger] Initiating pipeline sync for GW${targetGw}...`)
       
       // Execute pipeline asynchronously

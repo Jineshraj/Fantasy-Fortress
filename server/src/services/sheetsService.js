@@ -37,12 +37,12 @@ export async function getActiveGameweek() {
     const values = res.data.values || []
     const gws = values.map((r) => Number(r[0])).filter((n) => !isNaN(n) && n > 0)
     if (gws.length > 0) {
-      const maxGw = Math.min(Math.max(...gws), 38)
+      const rawMax = Math.max(...gws)
       // D95: Warn if max GW seems too high (managers may have submitted future GW early)
-      if (maxGw > 38) {
-        console.warn(`[Gameweek Detection] WARNING: GW${maxGw} detected but season has 38 GWs max.`)
+      if (rawMax > 38) {
+        console.warn(`[Gameweek Detection] WARNING: GW${rawMax} detected but season has 38 GWs max.`)
       }
-      return maxGw
+      return Math.min(rawMax, 38)
     }
   } catch (e) {
     console.warn('[Gameweek Detection] Error reading Lineup_Rosters:', e.message)

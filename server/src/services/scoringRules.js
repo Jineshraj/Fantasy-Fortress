@@ -76,8 +76,8 @@ export function buildPointsBreakdownItems(stats = {}, fantasyPos = 'MID') {
   const penaltySavePts = penSave * 5
   const penaltyMissPts = -penMiss * 3
 
-  // 6. Cards & own goals
-  const cardsPts = -yellow * 1 - red * 3
+  // 6. Cards & own goals (if red card is awarded, total penalty is -3; yellows are not additionally deducted)
+  const cardsPts = red >= 1 ? -red * 3 : -yellow * 1
   const ownGoalsPts = -ownGoals * 2
 
   // 7. Hat-trick bonus

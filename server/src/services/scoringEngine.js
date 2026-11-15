@@ -1,11 +1,15 @@
 import 'dotenv/config'
 import { google } from 'googleapis'
 import { getGoogleAuth } from '../lib/auth.js'
-import { normalizeName, getSimilarityScore, isSameClub } from './rosterValidator.js'
+import { normalizeName, getSimilarityScore, isSameClub, cleanClubName } from './rosterValidator.js'
+import { getCanonicalClubName } from './fixtureService.js'
 import { SIMILARITY_THRESHOLDS } from '../lib/constants.js'
 import { resolveExactTabName, getActiveGameweek } from './sheetsService.js'
-import { syncStadiumPoints, matchHomeClub } from './stadiumService.js'
+import { syncStadiumPoints, matchHomeClub, TEAM_STADIUM_MAP } from './stadiumService.js'
 import { buildPointsBreakdown, buildMatchBreakdown } from './scoringRules.js'
+
+// Re-export TEAM_STADIUM_MAP for backwards-compatibility
+export { TEAM_STADIUM_MAP }
 
 const spreadsheetId = process.env.GOOGLE_SHEET_ID || '1smqnbGD0chXTYLRepUrmiQePc5zuMdQu4AFaASZZRcU'
 
@@ -18,26 +22,6 @@ function simpleHash(str) {
     hash = hash & hash
   }
   return Math.abs(hash).toString(16).padStart(8, '0')
-}
-
-// Official 16 Team Stadium Ownership & Real-World Home Club Mapping
-export const TEAM_STADIUM_MAP = {
-  'Aguilas Dorados': { stadium: 'Anfield', homeClub: 'Liverpool FC' },
-  'Aura Farmers': { stadium: 'Etihad Stadium', homeClub: 'Manchester City' },
-  'Aztec Blinders': { stadium: 'Stamford Bridge', homeClub: 'Chelsea FC' },
-  'Choakers FC': { stadium: 'Spotify Camp Nou', homeClub: 'FC Barcelona' },
-  'Committe Team': { stadium: 'Roazhon Park', homeClub: 'Stade Rennais FC' },
-  'Iberian Wizards': { stadium: 'Parc des Princes', homeClub: 'Paris Saint-Germain' },
-  'Jogo Bonito': { stadium: 'Santiago Bernabéu', homeClub: 'Real Madrid' },
-  'Kroos Control': { stadium: 'Allianz Arena', homeClub: 'Bayern Munich' },
-  'La Pulga': { stadium: 'Stadio Olimpico', homeClub: 'AS Roma' },
-  'Mamangam DC': { stadium: 'Stadio Giuseppe Meazza(IM)', homeClub: 'Inter Milan' },
-  'Mancunians': { stadium: 'Estadio de la Cerámica', homeClub: 'Villarreal CF' },
-  'Meridian Athletic': { stadium: 'MHPArena', homeClub: 'VfB Stuttgart' },
-  'Phoenix Flyers': { stadium: 'Riyadh Air Metropolitano', homeClub: 'Atlético de Madrid' },
-  'Reds': { stadium: 'Emirates Stadium', homeClub: 'Arsenal FC' },
-  'Relegated FC': { stadium: 'Old Trafford', homeClub: 'Manchester United' },
-  'xG Illuminati': { stadium: 'Signal Iduna Park', homeClub: 'Borussia Dortmund' },
 }
 
 function getColumnLetters(colIndex) {
@@ -244,7 +228,31 @@ export async function calculateAndSyncTeamScores(targetGw) {
   // player rows can be joined to the client's fixture list by id.
   const matchInfoById = new Map()
   const homeClubsAtHome = new Set()
-  const finishedClubs = new Set()
+
+  const TERMINAL_FIXTURE_STATUSES = new Set([
+    'FINISHED', 'POSTPONED', 'CANCELLED', 'CANCELED',
+    'ABANDONED', 'AWARDED', 'VOID', 'SUSPENDED',
+  ])
+
+  const canonClubKey = (raw) => {
+    const name = String(raw || '').trim()
+    if (!name) return ''
+    const cleaned = cleanClubName(name) || name
+    return normalizeName(getCanonicalClubName(cleaned) || cleaned)
+  }
+
+  const clubGwFixtures = new Map() // canonKey -> { total, finished, pending }
+
+  const addClubFixture = (rawClub, rawStatus) => {
+    const key = canonClubKey(rawClub)
+    if (!key) return
+    const status = String(rawStatus || '').trim().toUpperCase()
+    const entry = clubGwFixtures.get(key) || { total: 0, finished: 0, pending: 0 }
+    entry.total += 1
+    if (status === 'FINISHED') entry.finished += 1
+    if (!TERMINAL_FIXTURE_STATUSES.has(status)) entry.pending += 1
+    clubGwFixtures.set(key, entry)
+  }
 
   fixtureRowsEarly.forEach((f) => {
     const fHomeRaw = String(f[3] || '').trim()
@@ -268,17 +276,41 @@ export async function calculateAndSyncTeamScores(targetGw) {
     if (fAfId) matchInfoById.set(`af:${fAfId}`, fixture)
 
     if (fHomeNorm) homeClubsAtHome.add(fHomeNorm)
-    if (fStatus === 'FINISHED') {
-      if (fHomeNorm) {
-        finishedClubs.add(fHomeNorm)
-        finishedClubs.add(fHomeNorm.replace(/\s+/g, ''))
-      }
-      if (fAwayNorm) {
-        finishedClubs.add(fAwayNorm)
-        finishedClubs.add(fAwayNorm.replace(/\s+/g, ''))
-      }
-    }
+    addClubFixture(fHomeRaw, fStatus)
+    addClubFixture(fAwayRaw, fStatus)
   })
+
+  // Guarded club key resolver (exact canonical first, unambiguous fuzzy fallback)
+  const resolveClubKey = (rawClub) => {
+    const key = canonClubKey(rawClub)
+    if (!key) return { key: '', ambiguous: false }
+    if (clubGwFixtures.has(key)) return { key, ambiguous: false }
+
+    const matches = [...clubGwFixtures.keys()].filter((k) => isSameClub(k, key))
+    if (matches.length === 1) return { key: matches[0], ambiguous: false }
+    if (matches.length > 1) return { key: '', ambiguous: true }
+    return { key: '', ambiguous: false }
+  }
+
+  // DGW / BGW / Postponed-aware predicate: check if club has any pending matches
+  const clubHasPendingFixture = (rawClub, playerName) => {
+    if (!String(rawClub || '').trim()) {
+      console.warn(`[Sub] Unresolved club for ${playerName}; treating as unfinished.`)
+      return true
+    }
+
+    const { key, ambiguous } = resolveClubKey(rawClub)
+    if (ambiguous) {
+      console.warn(`[Sub] Ambiguous club "${rawClub}" for ${playerName}; treating as unfinished.`)
+      return true
+    }
+    if (!key) {
+      // Known club with no fixture this GW => Blank Gameweek => nothing pending.
+      console.warn(`[Sub] No GW fixture for ${playerName} (${rawClub}); treating as blank GW.`)
+      return false
+    }
+    return (clubGwFixtures.get(key)?.pending || 0) > 0
+  }
 
   // ────────────────────────────────────────────────────────────────────
   // CANONICAL NAME RESOLVER (uses Player_ID_Mappings as the source of truth)
@@ -647,7 +679,7 @@ export async function calculateAndSyncTeamScores(targetGw) {
   // Load Fixture_Staging FIRST — we need the match_id → home_club map
   // BEFORE aggregating staging rows, so we can track per-match home stats
   // (goals, assists, CS) for the home bonus.
-  // NOTE: fixtureRes / matchInfoById / homeClubsAtHome / finishedClubs are
+  // NOTE: fixtureRes / matchInfoById / homeClubsAtHome / clubGwFixtures are
   // already loaded above (before the staging row aggregation) — see FIXTURE
   // LOADING block. Only the stadium sync happens here.
   const { stadiumPointsMap, teamHomeClubMap } = await syncStadiumPoints(targetGw)
@@ -716,7 +748,8 @@ export async function calculateAndSyncTeamScores(targetGw) {
       || (captainDetail.ownGoals || 0) > 0
       || (captainDetail.penMiss || 0) > 0
       || (captainDetail.penSave || 0) > 0
-    const captainMatchFinished = finishedClubs.has(normalizeName(captainDetail.club))
+    const capClub = captainDetail.club || captainPData.club || captainCanon.club || ''
+    const captainMatchFinished = !clubHasPendingFixture(capClub, captain.player_name)
 
     // Smart Captain 2x Resolution (D93): Promote vice-captain ONLY if vice actually played
     let effectiveCaptainName = captain.player_name
@@ -764,11 +797,7 @@ export async function calculateAndSyncTeamScores(targetGw) {
         || (detail.penMiss || 0) > 0
         || (detail.penSave || 0) > 0
       const pClub = detail.club || pData.club || canon.club || ''
-      const pClubNorm = normalizeName(pClub)
-      const pClubNoSpace = pClubNorm.replace(/\s+/g, '')
-      const matchFinished = finishedClubs.has(pClubNorm)
-        || finishedClubs.has(pClubNoSpace)
-        || Array.from(finishedClubs).some((fc) => isSameClub(fc, pClub))
+      const matchFinished = !clubHasPendingFixture(pClub, starter.player_name)
 
       if (!played && matchFinished) {
         subbedOutStarters.push(starter)
@@ -1008,9 +1037,11 @@ export async function calculateAndSyncTeamScores(targetGw) {
         const hR = detail.homeRed || 0
         const hOG = detail.homeOwnGoals || 0
         const hPM = detail.homePenMiss || 0
+        const posStr = String(p.position || canon.pos || '').toUpperCase().trim()
+        const isDefOrGk = ['GK', 'GKP', 'DEF', 'D'].includes(posStr)
         if (hg > 0) playerStadiumBonus += hg * 1
         if (ha > 0) playerStadiumBonus += ha * 1
-        if (hCS) playerStadiumBonus += 1
+        if (hCS && isDefOrGk) playerStadiumBonus += 1
         if (hPS > 0) playerStadiumBonus += hPS * 1
         if (hR > 0) playerStadiumBonus -= 1
         if (hOG > 0) playerStadiumBonus -= hOG * 1

@@ -1,8 +1,8 @@
 import dotenv from 'dotenv'
 import path from 'path'
 
-// Force dotenv to load .env from current directory with override
-dotenv.config({ path: path.resolve(process.cwd(), '.env'), override: true })
+// Load .env from current directory without overriding existing system env vars
+dotenv.config({ path: path.resolve(process.cwd(), '.env') })
 
 import { Groq } from 'groq-sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
@@ -167,14 +167,14 @@ export async function extractLineupWithAI(rawText) {
     }
   }
 
-  // 2. Fallback: Google Gemini 2.5 Flash
+  // 2. Fallback: Google Gemini 2.0 Flash
   try {
-    console.log('[AI Extractor] ⚡ Groq AI unavailable/failed. Switching to Gemini 2.5 Flash fallback...')
+    console.log('[AI Extractor] ⚡ Groq AI unavailable/failed. Switching to Gemini 2.0 Flash fallback...')
     const geminiApiKey = cleanKey(process.env.GEMINI_API_KEY)
     if (geminiApiKey) {
       const genAI = new GoogleGenerativeAI(geminiApiKey)
       const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash',
         generationConfig: { responseMimeType: 'application/json' },
       })
       const result = await model.generateContent(`${SYSTEM_PROMPT}\n\nUser Message:\n${rawText}`)
@@ -184,7 +184,7 @@ export async function extractLineupWithAI(rawText) {
         return {
           ...JSON.parse(responseText),
           parserSource: 'AI',
-          modelUsed: 'Gemini 2.5 Flash',
+          modelUsed: 'Gemini 2.0 Flash',
         }
       }
     }

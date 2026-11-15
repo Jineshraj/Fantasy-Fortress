@@ -115,6 +115,9 @@ export function PlayerModal({ item, onClose, gw }) {
   // Focus trap + focus restoration. Unchanged behaviour from the original
   // modal: Escape closes, backdrop closes, Tab stays inside, focus returns to
   // the card that opened it.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+
   useEffect(() => {
     openerRef.current = document.activeElement
     const dialog = dialogRef.current
@@ -122,7 +125,7 @@ export function PlayerModal({ item, onClose, gw }) {
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
-        onClose()
+        onCloseRef.current?.()
         return
       }
       if (event.key !== 'Tab' || !dialog) return
@@ -142,7 +145,7 @@ export function PlayerModal({ item, onClose, gw }) {
       document.removeEventListener('keydown', handleKeyDown)
       openerRef.current?.focus?.()
     }
-  }, [onClose])
+  }, [])
 
   const detail = state.detail
   const ccy = detail?.captaincy ?? item?.captaincy
@@ -196,6 +199,9 @@ export function PlayerModal({ item, onClose, gw }) {
               GW {week} total
               <b className="numeric">{total ?? '—'}</b>
             </p>
+            {Boolean(detail?.yetToPlay ?? item?.yetToPlay) && (
+              <p className="modal-note">Yet to play</p>
+            )}
           </div>
         </div>
 

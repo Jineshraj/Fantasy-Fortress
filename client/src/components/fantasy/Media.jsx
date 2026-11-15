@@ -28,6 +28,7 @@ export function LayeredMedia({
   const imgRef = useRef(null)
 
   // Skip candidates that already failed this session.
+  const candidateKey = candidates.join('|')
   useEffect(() => {
     const nextIdx = Math.max(0, candidates.findIndex((c) => !isImageBroken(c)))
     setIdx(nextIdx)
@@ -36,7 +37,8 @@ export function LayeredMedia({
     } else {
       setLoaded(false)
     }
-  }, [resetKey, candidates])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey, candidateKey])
 
   const src = candidates[idx]
   const exhausted = idx >= candidates.length

@@ -332,7 +332,7 @@ export async function syncAllToSupabase(targetGw, teamResults = null) {
             penalty_save: Number(p.penSave || 0),
             base_points: Number(p.base_pts || 0),
             stadium_bonus: Number(p.stadium_bonus || 0),
-            multiplier: Number(p.multiplier || 1),
+            multiplier: Number(p.multiplier ?? 1),
             final_points: Number(p.final_pts || 0),
             is_effective_starter: Boolean(p.isEffectiveStarter),
           }

@@ -25,7 +25,7 @@ A next-generation fantasy football tournament platform featuring automated dual-
 ## 🛠️ Tech Stack
 
 * **Frontend**: React, Vite, Tailwind CSS / Vanilla CSS, Lucide Icons
-* **Backend**: Node.js (ES Modules), Express
+* **Backend**: Node.js (native http, ES Modules)
 * **Database & Cloud**: Supabase (PostgreSQL), Google Sheets API (v4)
 * **Sports APIs**: SofaScore (RapidAPI), API-Football (API-Sports)
 * **Automation**: Telegram Bot API, Node Cron

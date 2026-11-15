@@ -105,8 +105,8 @@ export function Leaderboard({ teams, latestGw, gw }) {
       <SearchBox
         value={query}
         onChange={setQuery}
-        placeholder="Search teams or managers…"
-        label="Search teams or managers"
+        placeholder="Search teams…"
+        label="Search teams"
       />
 
       <div className={cn('leaderboard-head', mode === 'overall' ? 'emph-total' : 'emph-gw')}>

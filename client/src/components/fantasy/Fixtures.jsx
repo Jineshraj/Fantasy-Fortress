@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarClock, ChevronDown } from 'lucide-react'
-import { fetchFixtures, fetchFixtureOwnership } from '@/data/live'
+import { clearLiveCache, fetchFixtures, fetchFixtureOwnership } from '@/data/live'
 import { ClubMark } from './Imagery'
 import { FixtureOwnershipModal } from './FixtureOwnershipModal'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
@@ -106,6 +106,7 @@ export function Fixtures({ gw }) {
   const retryOwnership = () => {
     const f = ownership.fixture
     if (!f) return
+    clearLiveCache('pstats')
     setOwnership({ fixture: f, status: 'loading', rows: [], error: null })
     fetchFixtureOwnership(
       { homeName: f.home.name, awayName: f.away.name },
@@ -124,7 +125,18 @@ export function Fixtures({ gw }) {
       )
   }
 
-  const statusLabel = (f) => (f.score !== null ? 'Full time' : 'Upcoming')
+  const statusLabel = (f) => {
+    if (f.status === 'FINISHED') return 'Full time'
+    if (f.status === 'LIVE') return 'Live'
+    if (f.status === 'POSTPONED') return 'Postponed'
+    if (f.status === 'CANCELLED' || f.status === 'CANCELED') return 'Cancelled'
+    if (f.status === 'ABANDONED') return 'Abandoned'
+    if (f.status === 'SUSPENDED') return 'Suspended'
+    if (f.status === 'AWARDED') return 'Awarded'
+    if (f.status === 'VOID') return 'Void'
+    if (f.status === 'SCHEDULED') return 'Yet to play'
+    return f.score !== null ? 'Full time' : 'Upcoming'
+  }
 
   return (
     <section className="page-section">
@@ -151,7 +163,7 @@ export function Fixtures({ gw }) {
         <div className="gw-groups">
           {byGw.map(([g, rows]) => {
             const expanded = open.has(g)
-            const played = rows.filter((f) => f.score !== null).length
+            const played = rows.filter((f) => f.status === 'FINISHED').length
             return (
               <div className={cn('accordion-group gw-group', g === gw && 'current')} key={g}>
                 <button type="button" aria-expanded={expanded} onClick={() => toggle(g)}>
@@ -167,8 +179,22 @@ export function Fixtures({ gw }) {
                 {expanded && (
                   <div className="fixtures-list grouped">
                     {rows.map((f) => {
-                      const isFinal = f.score !== null
+                      const isFinal = f.status === 'FINISHED'
+                      const isMatchLive = f.status === 'LIVE'
                       const label = statusLabel(f)
+                      const stateText = isFinal
+                        ? `${f.score?.[0]} to ${f.score?.[1]}, full time`
+                        : isMatchLive
+                          ? `live${f.score ? `, current score ${f.score[0]} to ${f.score[1]}` : ''}`
+                          : f.status === 'POSTPONED'
+                            ? 'postponed'
+                            : f.status === 'CANCELLED' || f.status === 'CANCELED'
+                              ? 'cancelled'
+                              : f.status === 'ABANDONED'
+                                ? 'abandoned'
+                                : f.status === 'SUSPENDED'
+                                  ? 'suspended'
+                                  : 'yet to play'
                       return (
                         <button
                           key={f.id}
@@ -176,17 +202,16 @@ export function Fixtures({ gw }) {
                           className={cn(
                             'fixture-card',
                             'fixture-card--interactive',
-                            isFinal && 'final'
+                            isFinal && 'final',
+                            isMatchLive && 'is-live'
                           )}
-                          aria-label={`${f.homeName} versus ${f.awayName}, gameweek ${g}, ${
-                            isFinal ? `${f.score[0]} to ${f.score[1]}, full time` : 'upcoming'
-                          }. View league ownership.`}
+                          aria-label={`${f.homeName} versus ${f.awayName}, gameweek ${g}, ${stateText}. View league ownership.`}
                           onClick={() => openOwnership(f)}
                         >
                           <div className="fixture-meta">
-                            {!isFinal && <span className="fixture-kickoff">{f.kickoff}</span>}
+                            {!isFinal && !isMatchLive && <span className="fixture-kickoff">{f.kickoff}</span>}
                             <span
-                              className={cn('fixture-status', isFinal && 'is-final')}
+                              className={cn('fixture-status', isFinal && 'is-final', isMatchLive && 'is-live')}
                               aria-hidden="true"
                             >
                               <span className="status-dot" />
@@ -200,11 +225,11 @@ export function Fixtures({ gw }) {
                               <span className="fixture-broadcast">{f.home}</span>
                             </div>
                             <div className="fixture-score">
-                              {isFinal ? (
+                              {isFinal || isMatchLive ? (
                                 <>
-                                  <strong className="numeric">{f.score[0]}</strong>
+                                  <strong className="numeric">{f.score?.[0] ?? 0}</strong>
                                   <i>–</i>
-                                  <strong className="numeric">{f.score[1]}</strong>
+                                  <strong className="numeric">{f.score?.[1] ?? 0}</strong>
                                 </>
                               ) : (
                                 <span className="vs">VS</span>

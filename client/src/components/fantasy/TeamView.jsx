@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, List, TriangleAlert, Users } from 'lucide-react'
-import { fetchGameweekStatus, fetchTeamSquad } from '@/data/live'
+import { clearLiveCache, fetchGameweekStatus, fetchTeamSquad } from '@/data/live'
 import { PlayerCard } from './PlayerCard'
 import { PlayerModal } from './PlayerModal'
 import { PlayerPhoto } from './Imagery'
@@ -19,8 +19,9 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
   const [state, setState] = useState({ status: 'loading', squad: null, error: null })
   const [statusText, setStatusText] = useState(null)
 
-  const load = useCallback(() => {
+  const load = useCallback((force = false) => {
     if (!team?.name) return
+    if (force) clearLiveCache('pstats')
     setState({ status: 'loading', squad: null, error: null })
     fetchTeamSquad(team.name, gw)
       .then((squad) =>
@@ -54,6 +55,7 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
   const totals = state.squad?.totals ?? null
   const gwPoints = totals?.gw ?? null
   const seasonTotal = team?.total ?? totals?.season ?? 0
+  const yetToPlayCount = starters.filter((p) => p.yetToPlay).length
 
   const pitchLines = useMemo(
     () =>
@@ -63,6 +65,13 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
       })).filter((line) => line.players.length > 0),
     [starters]
   )
+
+  const formation = useMemo(() => {
+    const def = starters.filter((p) => normPos(p.pos) === 'DEF').length
+    const mid = starters.filter((p) => normPos(p.pos) === 'MID').length
+    const fwd = starters.filter((p) => normPos(p.pos) === 'FWD').length
+    return `${def}-${mid}-${fwd}`
+  }, [starters])
 
   return (
     <section className="page-section team-page">
@@ -142,7 +151,7 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
 
             <span className="pillar-status-line">
               {totals.playedCount}/{totals.startingSlots} Played
-              {statusText ? ` · ${statusText}` : ''}
+              {yetToPlayCount > 0 ? ` · ${yetToPlayCount} Yet to play` : statusText ? ` · ${statusText}` : ''}
             </span>
           </div>
 
@@ -183,7 +192,7 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
 
       {state.status === 'loading' && <LoadingBlock label="Loading squad" rows={6} variant="card" />}
 
-      {state.status === 'error' && <InlineError message={state.error} onRetry={load} />}
+      {state.status === 'error' && <InlineError message={state.error} onRetry={() => load(true)} />}
 
       {state.status === 'empty' && (
         <EmptyState
@@ -195,7 +204,20 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
 
       {state.status === 'ready' && view === 'pitch' && (
         <>
+          <div className="pitch-ticker-tape" aria-hidden="true">
+            <span className="ticker-text">
+              {`/// ${team?.name?.toUpperCase() || 'MY TEAM'} /// ${formation} FORMATION /// ${team?.name?.toUpperCase() || 'MY TEAM'} /// ${formation} FORMATION ///`}
+            </span>
+          </div>
+
           <div className="pitch" aria-label="Tactical lineup">
+            <div className="pitch-markings" aria-hidden="true">
+              <div className="pitch-penalty-area" />
+              <div className="pitch-goal-area" />
+              <div className="pitch-halfway-line">
+                <div className="pitch-center-circle" />
+              </div>
+            </div>
             {pitchLines.map((line) => (
               <div className="pitch-line" key={line.pos}>
                 {line.players.map((p) => (
@@ -216,23 +238,24 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
           {bench.length > 0 && (
             <section className="bench-section" aria-label="Bench substitutes">
               <div className="bench-heading">
-                <div>
-                  <p className="eyebrow">Substitutes</p>
-                  <h2>Bench</h2>
-                </div>
+                <span className="bench-pill-badge">BENCH</span>
               </div>
               <div className="bench-row">
-                {bench.map((p) => (
-                  <PlayerCard
-                    compact
-                    key={p.name}
-                    item={p}
-                    displayState={p.displayState}
-                    captaincy={p.captaincy}
-                    opponent={p.opponent}
-                    effectivePoints={p.effectivePoints}
-                    onClick={() => setSelected(p)}
-                  />
+                {bench.map((p, idx) => (
+                  <div key={p.name} className="bench-col">
+                    <span className="bench-order-tag">
+                      <b className="bench-num">{idx + 1}</b> {p.pos}
+                    </span>
+                    <PlayerCard
+                      compact
+                      item={p}
+                      displayState={p.displayState}
+                      captaincy={p.captaincy}
+                      opponent={p.opponent}
+                      effectivePoints={p.effectivePoints}
+                      onClick={() => setSelected(p)}
+                    />
+                  </div>
                 ))}
               </div>
             </section>
@@ -260,6 +283,7 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
                 const pts = p.effectivePoints ?? p.points
                 const ccy = p.captaincy
                 const isNeg = Number(pts) < 0
+                const ytp = Boolean(p.yetToPlay)
                 return (
                   <button
                     type="button"
@@ -302,8 +326,15 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
                       {opp ? `${opp.code} ${opp.venue === 'home' ? '(H)' : '(A)'}` : '—'}
                     </span>
 
-                    <span className={cn('compact-player-pts numeric', isNeg && 'is-negative')}>
-                      {pts ?? '—'}
+                    <span
+                      className={cn(
+                        'compact-player-pts numeric',
+                        isNeg && 'is-negative',
+                        ytp && 'is-yet-to-play'
+                      )}
+                      title={ytp ? 'Yet to play' : undefined}
+                    >
+                      {ytp ? 'YTP' : pts ?? '—'}
                     </span>
                   </button>
                 )
@@ -323,6 +354,7 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
                 const pts = p.effectivePoints ?? p.points
                 const ccy = p.captaincy
                 const isNeg = Number(pts) < 0
+                const ytp = Boolean(p.yetToPlay)
                 return (
                   <button
                     type="button"
@@ -372,8 +404,15 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
                       {opp ? `${opp.code} ${opp.venue === 'home' ? '(H)' : '(A)'}` : '—'}
                     </span>
 
-                    <span className={cn('compact-player-pts numeric', isNeg && 'is-negative')}>
-                      {pts ?? '—'}
+                    <span
+                      className={cn(
+                        'compact-player-pts numeric',
+                        isNeg && 'is-negative',
+                        ytp && 'is-yet-to-play'
+                      )}
+                      title={ytp ? 'Yet to play' : undefined}
+                    >
+                      {ytp ? 'YTP' : pts ?? '—'}
                     </span>
                   </button>
                 )
