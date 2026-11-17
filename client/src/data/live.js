@@ -38,27 +38,83 @@ const cache = {
   lineups: null, // submitted lineups incl. is_captain / is_vice
 }
 
-async function loadAll(table, select, order) {
+// Per-(team, gameweek) `match_breakdown` rows. Kept out of the global boot
+// cache: the card only needs one team's 15 players for the visible week.
+const teamBreakdownCache = new Map()
+
+// Shared boot-progress state. Tier 1 (standings) and the background tiers push
+// into the same lists so the splash can show honest, cumulative progress.
+const progressState = { done: [], failed: [] }
+const resetProgress = () => {
+  progressState.done = []
+  progressState.failed = []
+}
+
+const RETRY_DELAY_MS = 1000
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// One automatic retry, but only for failures that can actually heal themselves
+// (network blip, cold Supabase). Missing tables/columns and other 4xx responses
+// are surfaced immediately — retrying them only delays the error.
+const isRetriableError = (err) => {
+  const code = String(err?.code || err?.cause?.code || '')
+  const status = Number(err?.status || err?.cause?.status || 0)
+  if (['42P01', '42703', '42883', 'PGRST204', 'PGRST205'].includes(code)) return false
+  if (status >= 400 && status < 500 && status !== 408 && status !== 429) return false
+  const message = String(err?.message || err?.cause?.message || '').toLowerCase()
+  if (message.includes('does not exist') || message.includes('column')) return false
+  return true
+}
+
+async function loadPage(table, select, order, filter, from, to) {
+  let attempt = 0
+  for (;;) {
+    try {
+      let query = supabase.from(table).select(select)
+      if (order) {
+        query = query.order(order.column, { ascending: order.ascending !== false })
+        if (order.column !== 'id') {
+          query = query.order('id', { ascending: true })
+        }
+      }
+      if (filter) {
+        const filters = Array.isArray(filter) ? filter : [filter]
+        filters.forEach((f) => {
+          if (f?.column) query = query.eq(f.column, f.value)
+        })
+      }
+      const { data, error } = await query.range(from, to)
+      if (error) {
+        throw new DataError(error.message || `Failed to load ${table}`, { cause: error, table })
+      }
+      return data || []
+    } catch (err) {
+      if (attempt < 1 && isRetriableError(err)) {
+        attempt += 1
+        await delay(RETRY_DELAY_MS)
+        continue
+      }
+      throw err
+    }
+  }
+}
+
+/**
+ * Load every page of a table. `filter` is an optional equality constraint
+ * (`{ column, value }`) or a list of them so callers can pull one team's
+ * single gameweek instead of the whole history. Each page gets one automatic
+ * retry on transient failures.
+ */
+async function loadAll(table, select, order, filter) {
   if (!supabase) {
     throw new DataError('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.', { table })
   }
-  let query = supabase.from(table).select(select)
-  if (order) {
-    query = query.order(order.column, { ascending: order.ascending !== false })
-    if (order.column !== 'id') {
-      query = query.order('id', { ascending: true })
-    }
-  }
-  // paginate past the default 1000-row window
   const rows = []
   const pageSize = 1000
   for (let from = 0; ; from += pageSize) {
-    const { data, error } = await query.range(from, from + pageSize - 1)
-    if (error) {
-      throw new DataError(error.message || `Failed to load ${table}`, { cause: error, table })
-    }
-    rows.push(...(data || []))
-    if (!data || data.length < pageSize) break
+    const data = await loadPage(table, select, order, filter, from, from + pageSize - 1)
+    rows.push(...data)
+    if (data.length < pageSize) break
   }
   return rows
 }
@@ -178,28 +234,86 @@ export async function fetchPlayersMap() {
 
 // ---------- player gameweek stats ----------
 
+// Scalar columns only. `points_breakdown` / `match_breakdown` are large JSON
+// payloads that only the player-detail modal needs, so they are fetched on
+// demand (see `fetchPlayerBreakdownRows`) instead of in this hot query.
+const PLAYER_STATS_SELECT =
+  'gameweek,team_name,player_name,position,role,minutes,goals,assists,clean_sheet,yellow_cards,red_cards,own_goals,penalty_miss,penalty_save,base_points,stadium_bonus,multiplier,final_points,is_effective_starter'
+
+const BREAKDOWN_SELECT =
+  'gameweek,team_name,player_name,points_breakdown,match_breakdown'
+
 async function fetchAllPlayerStats() {
   if (cache.pstats) return cache.pstats
-  const baseSelect =
-    'gameweek,team_name,player_name,position,role,minutes,goals,assists,clean_sheet,yellow_cards,red_cards,own_goals,penalty_miss,penalty_save,base_points,stadium_bonus,multiplier,final_points,is_effective_starter'
-  let rows
-  try {
-    rows = await loadAll(
-      'player_gameweek_stats',
-      `${baseSelect},points_breakdown,match_breakdown`,
-      { column: 'gameweek' }
-    )
-  } catch (err) {
-    // Graceful fallback ONLY when points_breakdown/match_breakdown columns are missing from the schema
-    const msg = String(err?.message || err?.cause?.message || '').toLowerCase()
-    if (msg.includes('column') || msg.includes('does not exist') || err?.code === 'PGRST204') {
-      rows = await loadAll('player_gameweek_stats', baseSelect, { column: 'gameweek' })
-    } else {
-      throw err
-    }
-  }
+  const rows = await loadAll('player_gameweek_stats', PLAYER_STATS_SELECT, { column: 'gameweek' })
   cache.pstats = rows
   return rows
+}
+
+// On-demand JSON for one player. A schema without these columns simply yields
+// no breakdown (the modal then shows its pending state), never a failed screen.
+async function fetchPlayerBreakdownRows(playerName) {
+  try {
+    return await loadAll(
+      'player_gameweek_stats',
+      BREAKDOWN_SELECT,
+      { column: 'gameweek' },
+      { column: 'player_name', value: playerName }
+    )
+  } catch {
+    return []
+  }
+}
+
+// On-demand JSON for one team + gameweek only (≤15 rows). The global boot query
+// deliberately does not select `match_breakdown`; see the loading-fix plan.
+async function fetchTeamBreakdownRows(teamName, gw) {
+  const key = `${teamName}::${gw}`
+  if (teamBreakdownCache.has(key)) return teamBreakdownCache.get(key)
+  const promise = loadAll(
+    'player_gameweek_stats',
+    'player_name,match_breakdown',
+    null,
+    [
+      { column: 'team_name', value: teamName },
+      { column: 'gameweek', value: gw },
+    ]
+  )
+    .catch(() => [])
+    .then((rows) => {
+      const byPlayer = new Map()
+      rows.forEach((r) => {
+        if (r?.player_name) byPlayer.set(r.player_name, r.match_breakdown ?? null)
+      })
+      return byPlayer
+    })
+  teamBreakdownCache.set(key, promise)
+  return promise
+}
+
+/**
+ * `gameweek_team_scores` is one physical table serving two screens. Load the
+ * union of columns exactly once and derive both H2H scores and captaincy from
+ * the same rows instead of issuing two overlapping queries.
+ */
+let teamScoresPromise = null
+
+async function fetchTeamScores() {
+  if (cache.teamScores) return cache.teamScores
+  if (teamScoresPromise) return teamScoresPromise
+  teamScoresPromise = loadAll(
+    'gameweek_team_scores',
+    'team_name,gameweek,total_points,stadium_bonus,captain_name,effective_captain_name',
+    { column: 'gameweek' }
+  )
+    .then((rows) => {
+      cache.teamScores = rows
+      return rows
+    })
+    .finally(() => {
+      teamScoresPromise = null
+    })
+  return teamScoresPromise
 }
 
 /**
@@ -212,16 +326,11 @@ async function fetchCaptaincyMap() {
     return { scores: cache.teamScores, lineups: cache.lineups }
   }
   const [scores, lineups] = await Promise.all([
-    loadAll(
-      'gameweek_team_scores',
-      'team_name,gameweek,captain_name,effective_captain_name',
-      { column: 'gameweek' }
-    ),
+    fetchTeamScores(),
     loadAll('lineups', 'team_name,gameweek,player_name,is_captain,is_vice', {
       column: 'gameweek',
     }),
   ])
-  cache.teamScores = scores
   cache.lineups = lineups
   return { scores, lineups }
 }
@@ -274,16 +383,34 @@ const displayStateOf = (role) => {
   return 'STARTER'
 }
 
+const DEAD_FIXTURE_STATUSES = new Set([
+  'POSTPONED',
+  'CANCELLED',
+  'CANCELED',
+  'ABANDONED',
+  'AWARDED',
+  'VOID',
+  'SUSPENDED',
+])
+
+const kickoffTime = (fixture) => {
+  const t = Date.parse(fixture?.kickoff ?? fixture?.match_date ?? '')
+  return Number.isNaN(t) ? Number.MAX_SAFE_INTEGER : t
+}
+
 /** Real-club opponent for a fantasy player in a given gameweek. */
 const opponentLookup = (fixtures, gw) => {
   const list = fixtures.filter((f) => f.gw === gw)
   return (club) => {
     if (!club) return null
-    const clubFixtures = list.filter(
-      (f) => isSameClub(club, f.homeName) || isSameClub(club, f.awayName)
-    )
+    const clubFixtures = list
+      .filter((f) => isSameClub(club, f.homeName) || isSameClub(club, f.awayName))
+      .slice()
+      .sort((a, b) => kickoffTime(a) - kickoffTime(b) || String(a.id).localeCompare(String(b.id)))
     if (clubFixtures.length === 0) return null
 
+    // Keep the legacy single-opponent shape (first fixture in kickoff order)
+    // for callers that only need one; `fixtures` is the full chronological list.
     const f = clubFixtures[0]
     const isHome = isSameClub(club, f.homeName)
     return {
@@ -296,11 +423,75 @@ const opponentLookup = (fixtures, gw) => {
       allScheduled: clubFixtures.every((x) => x.status === 'SCHEDULED'),
       hasLive: clubFixtures.some((x) => x.status === 'LIVE'),
       allFinished: clubFixtures.every((x) => x.status === 'FINISHED'),
+      anyPostponed: clubFixtures.some((x) => x.status === 'POSTPONED'),
+      anyDead: clubFixtures.some((x) => DEAD_FIXTURE_STATUSES.has(x.status)),
+      fixtures: clubFixtures.map((x) => {
+        const home = isSameClub(club, x.homeName)
+        return {
+          fixtureId: String(x.id),
+          code: home ? x.away : x.home,
+          venue: home ? 'home' : 'away',
+          status: x.status,
+          kickoff: x.kickoff,
+          matchDate: x.kickoff,
+          result: x.score ? { home: x.score[0], away: x.score[1] } : null,
+        }
+      }),
     }
   }
 }
 
-const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
+/**
+ * §4.3 display points — a frontend-only transformation of the stored per-match
+ * base points so DGW halves sum to `final_points`:
+ *   (base + stadiumBonusAllocatedTo(match)) * multiplier
+ * The stadium bonus is home-earned, so it goes on the first home match (and is
+ * never split arbitrarily). `final_points` remains the authority.
+ */
+const withDisplayPoints = (matches, { multiplier, stadiumBonus } = {}) => {
+  const mult = multiplier === 2 ? 2 : 1
+  const bonus = Number(stadiumBonus) || 0
+  const firstHome = matches.findIndex((m) => m.venue === 'home')
+  return matches.map((m, i) => {
+    const base = m.basePoints ?? m.totalPoints
+    const available =
+      Boolean(m.breakdownAvailable) &&
+      base !== null &&
+      base !== undefined &&
+      Number.isFinite(Number(base)) &&
+      Number(m.minutes) > 0
+    if (!available) return { ...m, displayPoints: null }
+    const allocated = i === firstHome ? bonus : 0
+    return { ...m, displayPoints: (Number(base) + allocated) * mult }
+  })
+}
+
+const buildFixtureMatches = (fixtureList, matchBreakdown, options) => {
+  const raw = Array.isArray(matchBreakdown) ? matchBreakdown : []
+  const byId = new Map(raw.map((m) => [String(m.fixtureId ?? m.fixture_id), m]))
+  const merged = (fixtureList || []).map((f) => {
+    const m = byId.get(String(f.fixtureId)) || null
+    const base = m?.totalPoints ?? null
+    return {
+      fixtureId: String(f.fixtureId),
+      code: f.code,
+      venue: f.venue,
+      status: f.status,
+      kickoff: f.kickoff,
+      minutes: m?.minutes ?? null,
+      basePoints: base,
+      breakdownAvailable:
+        m !== null &&
+        m?.breakdownAvailable !== false &&
+        base !== null &&
+        base !== undefined &&
+        Number.isFinite(Number(base)),
+    }
+  })
+  return withDisplayPoints(merged, options)
+}
+
+const toCard = (row, playersMap, seasonTotal, ctx, opponentOf, breakdownByPlayer) => {
   const meta = playersMap.get(row.player_name) || {}
   const club = meta.club || ''
   const role = row.role
@@ -308,6 +499,12 @@ const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
   const displayState = displayStateOf(role)
   const points = row.final_points ?? 0
   const opponent = opponentOf(club)
+  const matchBreakdown =
+    breakdownByPlayer?.get(row.player_name) ?? row.match_breakdown ?? null
+  const matches = buildFixtureMatches(opponent?.fixtures, matchBreakdown, {
+    multiplier: row.multiplier,
+    stadiumBonus: row.stadium_bonus,
+  })
 
   return {
     name: row.player_name,
@@ -316,6 +513,7 @@ const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
     club,
     clubCode: broadcastCodeOf(club),
     points,
+    finalPoints: row.final_points ?? null,
     // Only an effective starter's total counts anywhere it is shown; every
     // other row is explicitly zero rather than a silent 0-by-default.
     effectivePoints: isEffectiveStarter ? points : 0,
@@ -330,7 +528,12 @@ const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
     isEffectiveStarter,
     captaincy: buildCaptaincy(row.player_name, ctx, row.multiplier),
     opponent,
+    matches,
     yetToPlay: Boolean(opponent?.allScheduled),
+    allScheduled: Boolean(opponent?.allScheduled),
+    allFinished: Boolean(opponent?.allFinished),
+    hasLive: Boolean(opponent?.hasLive),
+    anyDead: Boolean(opponent?.anyDead),
     cleanSheet: Boolean(row.clean_sheet),
     yellowCards: row.yellow_cards ?? 0,
     redCards: row.red_cards ?? 0,
@@ -343,7 +546,7 @@ const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
     gameweek: row.gameweek,
     teamName: row.team_name,
     pointsBreakdown: row.points_breakdown ?? null,
-    matchBreakdown: row.match_breakdown ?? null,
+    matchBreakdown,
   }
 }
 
@@ -356,11 +559,12 @@ const toCard = (row, playersMap, seasonTotal, ctx, opponentOf) => {
  * squad instead of falling back to another week's lineup.
  */
 export async function fetchTeamSquad(teamName, gw) {
-  const [rows, playersMap, fixtures, captaincy] = await Promise.all([
+  const [rows, playersMap, fixtures, captaincy, breakdownByPlayer] = await Promise.all([
     fetchAllPlayerStats(),
     fetchPlayersMap(),
     fetchFixtures(),
     fetchCaptaincyMap(),
+    fetchTeamBreakdownRows(teamName, gw),
   ])
   const teamRows = rows.filter((r) => r.team_name === teamName)
   if (teamRows.length === 0) throw new DataError(`No stats for ${teamName}`, { table: 'player_gameweek_stats' })
@@ -377,7 +581,7 @@ export async function fetchTeamSquad(teamName, gw) {
   // Requested week only — no fallback to a different gameweek.
   const gwRows = teamRows.filter((r) => r.gameweek === gw)
   const cards = gwRows.map((r) =>
-    toCard(r, playersMap, seasonByPlayer.get(r.player_name) || 0, ctx, opponentOf)
+    toCard(r, playersMap, seasonByPlayer.get(r.player_name) || 0, ctx, opponentOf, breakdownByPlayer)
   )
 
   const starters = cards.filter((c) => c.role === 'STARTER' || c.role === 'AUTO_SUB_OUT')
@@ -494,19 +698,32 @@ const normalizeMatches = (row, shells) => {
  * @param {number} gw
  */
 export async function fetchPlayerDetail(playerName, teamName, gw) {
-  const [rows, playersMap, captaincy, fixtures] = await Promise.all([
+  const [rows, playersMap, captaincy, fixtures, breakdownRows] = await Promise.all([
     fetchAllPlayerStats(),
     fetchPlayersMap(),
     fetchCaptaincyMap(),
     fetchFixtures(),
+    fetchPlayerBreakdownRows(playerName),
   ])
 
-  const row = rows.find(
+  const heavyByGw = new Map(breakdownRows.map((r) => [r.gameweek, r]))
+
+  const baseRow = rows.find(
     (r) => r.gameweek === gw && r.team_name === teamName && r.player_name === playerName
   )
-  if (!row) {
+  if (!baseRow) {
     throw new DataError(`No GW${gw} stats for ${playerName}`, { table: 'player_gameweek_stats' })
   }
+  // The scalar select no longer carries the JSON columns; attach the on-demand
+  // row so the ledger and DGW tabs behave exactly as before.
+  const heavy = heavyByGw.get(gw)
+  const row = heavy
+    ? {
+        ...baseRow,
+        points_breakdown: heavy.points_breakdown ?? null,
+        match_breakdown: heavy.match_breakdown ?? null,
+      }
+    : baseRow
 
   const meta = playersMap.get(playerName) || {}
   const club = meta.club || ''
@@ -521,9 +738,12 @@ export async function fetchPlayerDetail(playerName, teamName, gw) {
   // Every real fixture this player's club has in the gameweek. Two of them
   // means a Double Gameweek — detected from the fixture list, never guessed
   // from a single aggregate row.
-  const clubFixtures = fixtures.filter(
-    (f) => f.gw === gw && club && (isSameClub(club, f.homeName) || isSameClub(club, f.awayName))
-  )
+  const clubFixtures = fixtures
+    .filter(
+      (f) => f.gw === gw && club && (isSameClub(club, f.homeName) || isSameClub(club, f.awayName))
+    )
+    .slice()
+    .sort((a, b) => kickoffTime(a) - kickoffTime(b) || String(a.id).localeCompare(String(b.id)))
   const isDouble = clubFixtures.length === 2
   const yetToPlay =
     clubFixtures.length > 0 && clubFixtures.every((f) => f.status === 'SCHEDULED')
@@ -607,7 +827,10 @@ export async function fetchPlayerDetail(playerName, teamName, gw) {
     }
   }
 
-  const matches = normalizeMatches(row, shells)
+  const matches = withDisplayPoints(normalizeMatches(row, shells), {
+    multiplier: mult,
+    stadiumBonus: row.stadium_bonus,
+  })
 
   // Form: the player's completed gameweeks for this fantasy team, chronological,
   // latest five. Rows with no minutes and no points are omitted — a fabricated
@@ -625,7 +848,9 @@ export async function fetchPlayerDetail(playerName, teamName, gw) {
     .map((r) => ({
       gameweek: r.gameweek,
       points: r.final_points ?? 0,
-      isDouble: Array.isArray(r.match_breakdown) && r.match_breakdown.length === 2,
+      isDouble: Array.isArray(heavyByGw.get(r.gameweek)?.match_breakdown)
+        ? heavyByGw.get(r.gameweek).match_breakdown.length === 2
+        : false,
     }))
     .concat([{ gameweek: gw, points: totalPoints ?? 0, isDouble }])
     .sort((a, b) => a.gameweek - b.gameweek)
@@ -849,11 +1074,7 @@ export async function fetchFixtureOwnership(fixture, gw) {
 // Returns Map<"GW<n>:<team>", number> so any fixture can be scored by lookup.
 async function fetchH2HScores() {
   if (cache.gwScores) return cache.gwScores
-  const rows = await loadAll(
-    'gameweek_team_scores',
-    'team_name,gameweek,total_points,stadium_bonus',
-    { column: 'gameweek' }
-  )
+  const rows = await fetchTeamScores()
   const map = new Map()
   rows.forEach((r) => {
     const h2hScore = (Number(r.total_points) || 0) - (Number(r.stadium_bonus) || 0)
@@ -998,6 +1219,7 @@ export async function buildSuperCup() {
 export function clearLiveCache(key) {
   if (key && key in cache) {
     cache[key] = null
+    if (key === 'pstats') teamBreakdownCache.clear()
     return
   }
   cache.standings = null
@@ -1008,77 +1230,137 @@ export function clearLiveCache(key) {
   cache.gwScores = null
   cache.teamScores = null
   cache.lineups = null
+  teamBreakdownCache.clear()
+  resetProgress()
 }
 
 // ---------------------------------------------------------------------------
-// Boot prefetch — starts on app mount, in parallel, and gates the splash.
+// Boot prefetch — Tier 1 (standings) gates the first paint; the rest warm up
+// in the background or load on demand per screen.
 //
-// The splash used to be a fixed 2s timer that fired *before* any request was
-// made, so the user waited 2s for nothing and then waited again for data. This
-// warms every core dataset up front and reports per-step progress so the
-// loading screen reflects real work.
+// Previously every core dataset was awaited together, so the splash could not
+// finish until the heaviest table (`player_gameweek_stats` for all gameweeks,
+// including the JSON breakdown columns) had loaded. That is why a slow cold
+// load used to fall through to the "League data unavailable" panel.
 //
-// `standings` is the only hard requirement: without it there is no app. The
-// rest are best-effort — a failure there degrades that one screen (which shows
-// its own error state) rather than blocking the whole hub.
+// Tier 1:  standings + crests — the only data /table cannot render without.
+// Tier 2:  fixtures, H2H/cup team scores, players master — background.
+// On demand: player_gameweek_stats (Squad/Stats/Player), breakdown JSON.
 // ---------------------------------------------------------------------------
 export const PREFETCH_STEPS = [
-  { key: 'standings', label: 'League table' },
-  { key: 'squads', label: 'Squads & player stats' },
-  { key: 'scores', label: 'H2H & cup scores' },
+  { key: 'standings', label: 'League table', critical: true },
   { key: 'fixtures', label: 'Fixtures' },
+  { key: 'scores', label: 'H2H & cup scores' },
+  { key: 'players', label: 'Players' },
 ]
+
+const reportProgress = (onProgress) =>
+  onProgress?.({ done: [...progressState.done], failed: [...progressState.failed] })
+
+const track = (key, promise, onProgress) =>
+  promise.then(
+    (value) => {
+      if (!progressState.done.includes(key)) progressState.done.push(key)
+      progressState.failed = progressState.failed.filter((k) => k !== key)
+      reportProgress(onProgress)
+      return value
+    },
+    (err) => {
+      if (!progressState.failed.includes(key)) progressState.failed.push(key)
+      progressState.done = progressState.done.filter((k) => k !== key)
+      reportProgress(onProgress)
+      throw err
+    }
+  )
+
+let standingsPromise = null
+
+/**
+ * Tier 1 — the only data the hub cannot render without. Safe to call from the
+ * access screen, the splash, or a retry: concurrent callers share one request.
+ * @returns {Promise<{standings: object}>}
+ */
+export function prefetchStandings(onProgress) {
+  if (cache.standings) {
+    if (!progressState.done.includes('standings')) progressState.done.push('standings')
+    reportProgress(onProgress)
+    return Promise.resolve({ standings: cache.standings })
+  }
+  if (!standingsPromise) {
+    standingsPromise = track('standings', fetchStandings(), onProgress)
+      .then((standings) => ({ standings }))
+      .catch((err) => {
+        standingsPromise = null
+        throw err
+      })
+  } else {
+    reportProgress(onProgress)
+  }
+  return standingsPromise
+}
+
+let restPromise = null
+
+/**
+ * Tiers 2–3 — best-effort background warm-up. A failure here degrades one
+ * screen (which owns its retry) and never blocks the hub.
+ * @returns {Promise<{done: string[], failed: string[], errors: Record<string, string>}>}
+ */
+export function prefetchRest(onProgress) {
+  if (restPromise) return restPromise
+  const errors = {}
+  const settle = (key, promise) =>
+    track(key, promise, onProgress).catch((err) => {
+      errors[key] = err?.message || 'Unknown error'
+      return null
+    })
+
+  restPromise = Promise.all([
+    settle('fixtures', fetchFixtures()),
+    settle('scores', Promise.all([fetchH2HScores(), fetchCaptaincyMap()])),
+    settle('players', fetchPlayersMap()),
+  ]).then(() => ({
+    done: [...progressState.done],
+    failed: [...progressState.failed],
+    errors,
+  }))
+  return restPromise
+}
 
 let prefetchPromise = null
 
 /**
+ * Full warm-up (Tier 1 then the background tiers). Used by refresh and retry
+ * callers that want the whole set; the first paint must use
+ * `prefetchStandings()` directly so it never waits on the heavy tiers.
  * @param {(progress: {done: string[], failed: string[]}) => void} [onProgress]
  * @returns {Promise<{standings: object, errors: Record<string, string>}>}
  */
 export function prefetchAll(onProgress) {
   if (prefetchPromise) return prefetchPromise
-
-  const done = []
-  const failed = []
-  const errors = {}
-  const report = () => onProgress?.({ done: [...done], failed: [...failed] })
-
-  const track = (key, promise) =>
-    promise.then(
-      (value) => {
-        done.push(key)
-        report()
-        return value
-      },
-      (err) => {
-        failed.push(key)
-        errors[key] = err?.message || 'Unknown error'
-        report()
-        // Swallow: a non-critical step must not reject the whole boot.
-        return null
-      }
-    )
-
-  const standingsPromise = track('standings', fetchStandings())
-
-  prefetchPromise = Promise.all([
-    standingsPromise,
-    track('squads', fetchAllPlayerStats().then(() => fetchPlayersMap())),
-    track('scores', Promise.all([fetchH2HScores(), fetchCaptaincyMap()])),
-    track('fixtures', fetchFixtures()),
-  ]).then(([standings]) => {
-    if (!standings) {
-      throw new DataError(errors.standings || 'Could not load the league table.', { table: 'standings' })
-    }
-    return { standings, errors }
-  })
-
+  prefetchPromise = prefetchStandings(onProgress)
+    .then(async ({ standings }) => {
+      const rest = await prefetchRest(onProgress)
+      return { standings, errors: rest.errors }
+    })
+    .catch((err) => {
+      prefetchPromise = null
+      throw err
+    })
   return prefetchPromise
 }
 
-/** Retry path: drop the cache and boot again. */
+/**
+ * Retry path — reuse every tier that already succeeded and re-run only the
+ * failed ones. Deliberately does NOT clear the memo caches: completed fetches
+ * resolve instantly, so pressing Try again is cheap. A deliberate refresh
+ * (`revalidate`, header button) is what clears the cache.
+ */
 export function retryPrefetch(onProgress) {
-  clearLiveCache()
+  // Drop a Tier-1 promise that is still pending — after a timeout it may never
+  // settle, and attaching a retry to it would hang the splash forever.
+  standingsPromise = null
+  restPromise = null
   prefetchPromise = null
   return prefetchAll(onProgress)
 }
@@ -1097,5 +1379,7 @@ export function retryPrefetch(onProgress) {
 export function revalidate(onProgress) {
   clearLiveCache()
   prefetchPromise = null
+  restPromise = null
+  standingsPromise = null
   return prefetchAll(onProgress)
 }

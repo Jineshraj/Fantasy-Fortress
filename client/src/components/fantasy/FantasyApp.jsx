@@ -24,7 +24,7 @@ import { StatsLeaders } from './StatsLeaders'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { ScrollRestoration } from '@/components/ui/ScrollRestoration'
 import { ErrorState } from '@/components/ui/states'
-import { prefetchAll, revalidate, retryPrefetch } from '@/data/live'
+import { prefetchRest, prefetchStandings, revalidate, retryPrefetch } from '@/data/live'
 import { DEFAULT_ROUTE, ROUTES, TITLE_SUFFIX, clampGw, findTeamBySlug, routeTitle } from '@/lib/routes'
 import { KEYS, getStored } from '@/lib/storage'
 
@@ -44,7 +44,10 @@ const COMPETITIONS = [
 const COMPETITION_ID = { [ROUTES.h2h]: 'h2h', [ROUTES.cup]: 'supercup' }
 
 const MIN_SPLASH_MS = 900
-const MAX_SPLASH_MS = 7000
+// A slow load is not an error. Only when Tier 1 (the league table) has not
+// settled after this long do we surface the retry panel. There is deliberately
+// no shorter "forced completion" timer.
+const TIER1_TIMEOUT_MS = 30000
 
 const relTime = (iso) => {
   const d = new Date(iso)
@@ -90,67 +93,108 @@ export function FantasyApp() {
   })
   const [retrying, setRetrying] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+
+  // Survives StrictMode's dev-only effect remount, so async boot handlers can
+  // tell "really unmounted" apart from "this effect was re-run".
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
 
-  // Start the requests immediately — the splash is a gate over real work now,
-  // not a fixed timer that ran before anything was fetched.
-  const started = useRef(false)
+  // Tier 1 starts on mount — even while the access gate is showing — so a
+  // first-time visitor's unlock does not begin from a cold cache. This effect
+  // only warms the data; the splash effect below owns rendering and failure.
   useEffect(() => {
-    if (stage === 'access' || started.current) return
-    started.current = true
-    const shownAt = Date.now()
     let cancelled = false
-
-    // Hold the splash open briefly so the crest animation reads, but never
-    // longer than MAX_SPLASH_MS (enforced by the effect below).
-    const reveal = () => {
-      const wait = Math.max(0, MIN_SPLASH_MS - (Date.now() - shownAt))
-      setTimeout(() => {
-        if (!cancelled) setStage('hub')
-      }, wait)
-    }
-
-    prefetchAll((progress) => {
+    prefetchStandings((progress) => {
       if (!cancelled) setBoot((b) => ({ ...b, progress }))
+    }).catch(() => {
+      /* failure is surfaced by the splash/retry flow */
     })
-      .then((result) => {
-        if (cancelled) return
-        setBoot({ status: 'ready', data: result, error: null, progress: { done: [], failed: [] } })
-        reveal()
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setBoot((b) => ({ ...b, status: 'error', error: err?.message || 'Could not reach the database.' }))
-        reveal()
-      })
-
     return () => {
       cancelled = true
     }
-  }, [stage])
+  }, [])
 
-  // Never let a slow network trap the user on the loading screen. If the
-  // prefetch hangs past MAX_SPLASH_MS we drop into the hub anyway; `boot.data`
-  // will still be null, which renders the retry panel rather than a dead splash.
+  // The splash is a gate over Tier 1 only. Once standings land we render the
+  // hub and warm the remaining tiers in the background; the table never waits
+  // on player stats, fixtures history, or H2H scores.
+  //
+  // Each boot is keyed by `attempt`: a retry bumps it and reruns this effect.
+  // A mount-lifetime ref (not a "started" flag) keeps this correct under
+  // StrictMode's development double-invoke.
   useEffect(() => {
     if (stage !== 'splash') return
-    const t = setTimeout(() => setStage('hub'), MAX_SPLASH_MS)
-    return () => clearTimeout(t)
-  }, [stage])
+    const shownAt = Date.now()
+    let revealTimer = null
+
+    const finish = (statusUpdate) => {
+      const wait = Math.max(0, MIN_SPLASH_MS - (Date.now() - shownAt))
+      revealTimer = setTimeout(() => {
+        if (!mountedRef.current) return
+        if (statusUpdate) setBoot(statusUpdate)
+        setRetrying(false)
+        setStage('hub')
+      }, wait)
+    }
+
+    const onProgress = (progress) => {
+      if (mountedRef.current) setBoot((b) => ({ ...b, progress }))
+    }
+
+    // Real failure only: a slow network keeps the splash up, it never fakes an
+    // error. If Tier 1 is still pending after the timeout, show the retry panel.
+    const failureTimer = setTimeout(() => {
+      if (!mountedRef.current) return
+      setBoot((b) => ({
+        ...b,
+        status: 'error',
+        error: b.error || 'The league table is taking too long to load.',
+      }))
+      setRetrying(false)
+      setStage('hub')
+    }, TIER1_TIMEOUT_MS)
+
+    const gate = attempt > 0 ? retryPrefetch(onProgress) : prefetchStandings(onProgress)
+    gate
+      .then(({ standings }) => {
+        if (!mountedRef.current) return
+        clearTimeout(failureTimer)
+        setBoot((b) => ({ ...b, status: 'ready', data: { standings }, error: null }))
+        // A retry already re-ran the background tiers; the first boot warms
+        // them here. Never awaited for first paint.
+        if (attempt === 0) prefetchRest(onProgress).catch(() => {})
+        finish()
+      })
+      .catch((err) => {
+        if (!mountedRef.current) return
+        clearTimeout(failureTimer)
+        finish({
+          status: 'error',
+          data: null,
+          error: err?.message || 'Could not reach the database.',
+          progress: { done: [], failed: [] },
+        })
+      })
+
+    return () => {
+      clearTimeout(failureTimer)
+      if (revealTimer) clearTimeout(revealTimer)
+    }
+  }, [stage, attempt])
 
   const onRetry = useCallback(() => {
     setRetrying(true)
+    setAttempt((a) => a + 1)
     setStage('splash')
-    retryPrefetch((progress) => setBoot((b) => ({ ...b, progress })))
-      .then((result) => setBoot({ status: 'ready', data: result, error: null, progress: { done: [], failed: [] } }))
-      .catch((err) => setBoot({ status: 'error', error: err?.message || 'Could not reach the database.' }))
-      .finally(() => {
-        setRetrying(false)
-        setStage('hub')
-      })
   }, [])
 
   const teams = boot.data?.standings?.teams ?? []

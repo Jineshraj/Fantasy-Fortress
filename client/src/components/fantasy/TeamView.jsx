@@ -227,6 +227,8 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
                     displayState={p.displayState}
                     captaincy={p.captaincy}
                     opponent={p.opponent}
+                    matches={p.matches}
+                    matchBreakdown={p.matchBreakdown}
                     effectivePoints={p.effectivePoints}
                     onClick={() => setSelected(p)}
                   />
@@ -252,6 +254,8 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
                       displayState={p.displayState}
                       captaincy={p.captaincy}
                       opponent={p.opponent}
+                      matches={p.matches}
+                      matchBreakdown={p.matchBreakdown}
                       effectivePoints={p.effectivePoints}
                       onClick={() => setSelected(p)}
                     />

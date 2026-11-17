@@ -736,6 +736,8 @@
 .boot-steps em { margin-left: auto; font-size: 12px; font-style: normal; text-transform: uppercase; letter-spacing: .08em; }
 .boot-step-icon { width: 18px; height: 18px; display: grid; place-items: center; }
 .boot-step-icon svg { width: 16px; height: 16px; }
+/* Calm "still working" note after ~10s. Never a failure message. */
+.boot-note { width: min(100%, 330px); text-align: center; font-size: 12px; font-weight: 600; color: var(--on-bg-muted); }
 .loading-track { position: absolute; bottom: 34px; width: min(calc(100% - 48px), 360px); height: 5px; background: var(--muted); border: 1px solid var(--on-bg-muted); overflow: hidden; border-radius: 2px; }
 .loading-track span { display: block; width: 100%; height: 100%; background: var(--primary); transform-origin: left; transition: transform .35s ease-out; }
 
@@ -1529,27 +1531,6 @@ h1, h2, h3 { letter-spacing: -.03em; }
 }
 
 /* Attached Disk Micro-Badges */
-.player-info-dot {
-  position: absolute;
-  top: -4px;
-  left: -3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--ff-ink);
-  color: #ffffff;
-  border: 0;
-  font-family: var(--font-heading);
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 18px;
-  text-align: center;
-  display: grid;
-  place-items: center;
-  z-index: 3;
-  pointer-events: none;
-}
-
 .player-cap-dot {
   position: absolute;
   top: -6px;
@@ -1637,7 +1618,7 @@ h1, h2, h3 { letter-spacing: -.03em; }
 }
 
 
-/* --- The Split Bottom Deck [ FIXTURE | PTS ] --- */
+/* --- The Bottom Block: one fixture OR the points (DGW = two halves) --- */
 .player-split-bar {
   width: 100%;
   height: 21px;
@@ -1646,6 +1627,28 @@ h1, h2, h3 { letter-spacing: -.03em; }
   align-items: stretch;
   border-top: 2.5px solid var(--ff-ink);
   box-sizing: border-box;
+}
+
+/* Single source of truth: one full-width block. */
+.player-split-bar.is-full {
+  grid-template-columns: 1fr;
+}
+
+/* Double gameweek: two equal halves, first-match on the left. */
+.player-split-bar.is-dgw {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.player-split-bar.is-dgw > :first-child {
+  border-right: 2px solid var(--ff-ink);
+}
+.player-split-bar.is-dgw .player-fixture-cell {
+  gap: 2px;
+  padding: 0 1px;
+  font-size: 8px;
+}
+.player-split-bar.is-dgw .venue-chip {
+  min-width: 10px;
+  height: 10px;
 }
 
 .player-fixture-cell {
@@ -1658,7 +1661,6 @@ h1, h2, h3 { letter-spacing: -.03em; }
   font: 800 8.5px/1 var(--font-heading);
   letter-spacing: .02em;
   text-transform: uppercase;
-  border-right: 2px solid var(--ff-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1697,6 +1699,7 @@ h1, h2, h3 { letter-spacing: -.03em; }
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 2px;
   font: 900 12.5px/1 var(--font-heading);
   text-align: center;
   white-space: nowrap;
@@ -1736,6 +1739,47 @@ h1, h2, h3 { letter-spacing: -.03em; }
   color: var(--ff-ink) !important;
   font-size: 8.5px;
   letter-spacing: .03em;
+}
+
+/* Full-width state machine blocks: fixture, points, LIVE, PPD / —. */
+.player-points-cell.is-full {
+  font-size: 15px;
+}
+.player-points-cell.is-live {
+  background: #ff5c6c !important;
+  color: #ffffff !important;
+  font-size: 9px;
+  letter-spacing: .05em;
+}
+.player-points-cell.is-empty {
+  background: #c9c3d4 !important;
+  color: #4a4356 !important;
+  font-size: 12px;
+}
+.player-points-value {
+  display: inline-block;
+}
+.player-mult-tag,
+.player-bonus-tag {
+  font: 900 8px/1 var(--font-heading);
+  letter-spacing: 0;
+}
+.player-mult-tag {
+  opacity: .85;
+}
+.player-bonus-tag {
+  padding: 1px 2px;
+  border-radius: 2px;
+  background: #ffd23f;
+  color: var(--ff-ink);
+}
+.player-points-cell.is-haul .player-bonus-tag {
+  background: var(--ff-ink);
+  color: #ffffff;
+}
+.player-points-cell.is-negative .player-bonus-tag {
+  background: #ffffff;
+  color: var(--ff-danger);
 }
 
 /* --- Card State Variations --- */
@@ -1827,8 +1871,14 @@ h1, h2, h3 { letter-spacing: -.03em; }
   .player-fixture-cell {
     font-size: 9px;
   }
+  .player-split-bar.is-dgw .player-fixture-cell {
+    font-size: 9px;
+  }
   .player-points-cell {
     font-size: 13px;
+  }
+  .player-points-cell.is-full {
+    font-size: 16px;
   }
 }
 
@@ -1863,8 +1913,14 @@ h1, h2, h3 { letter-spacing: -.03em; }
   .player-fixture-cell {
     font-size: 10px;
   }
+  .player-split-bar.is-dgw .player-fixture-cell {
+    font-size: 10px;
+  }
   .player-points-cell {
     font-size: 14px;
+  }
+  .player-points-cell.is-full {
+    font-size: 17px;
   }
   .player-cap-dot {
     width: 18px;
@@ -2135,6 +2191,9 @@ h1, h2, h3 { letter-spacing: -.03em; }
   }
   .player-points-cell {
     font-size: 10px;
+  }
+  .player-points-cell.is-full {
+    font-size: 12px;
   }
   .pillar-col { padding: 8px 3px; }
   .pillar-hero-score { font-size: 24px; }

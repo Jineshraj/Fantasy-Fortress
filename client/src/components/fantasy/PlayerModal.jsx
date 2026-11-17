@@ -336,15 +336,23 @@ export function PlayerModal({ item, onClose, gw }) {
                             Assists <b className="numeric">{activeMatch.assists ?? 0}</b>
                           </span>
                           <span>
-                            Fixture total{' '}
+                            Match points{' '}
                             <b className="numeric">
-                              {activeMatch.totalPoints ?? '—'}
+                              {activeMatch.displayPoints ?? '—'}
                             </b>
                           </span>
                         </div>
                       ) : (
                         <p className="modal-note">Match breakdown pending</p>
                       )}
+
+                      {activeMatch.breakdownAvailable &&
+                        (detail.multiplier === 2 || Number(detail.stadiumBonus) !== 0) && (
+                          <p className="modal-note">
+                            Match points apply the same ×2 multiplier and home stadium bonus as the
+                            gameweek total; the ledger lists the base lines first.
+                          </p>
+                        )}
                     </>
                   ) : (
                     <p className="modal-note">Not available</p>
