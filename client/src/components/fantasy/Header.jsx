@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { ChevronDown, RefreshCw, Swords, Trophy } from 'lucide-react'
 import { BrandLogo } from './BrandLogo'
 import { BRAND } from '@/config/brand'
+import { ROUTES } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 
 // Used only if a competition arrives without an Icon, so the dropdown can never
@@ -25,6 +27,12 @@ export function Header({
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
+  const location = useLocation()
+  const [searchParams] = useSearchParams()
+
+  const gw = searchParams.get('gw')
+  const homeTo = gw ? `${ROUTES.table}?gw=${gw}` : ROUTES.table
+  const activeComp = competitions.find((c) => c.id === activeCompetition) ?? null
 
   // §4.1 — on narrow phones the stamp collapses to just its age. The full
   // string stays in the DOM (visually hidden, still announced), so no state is
@@ -45,15 +53,29 @@ export function Header({
     }
   }, [open])
 
+  // The header sits outside <Routes>, so it never unmounts. Close the menu on
+  // any navigation (the old page's dropdown used to hang over the new one) and
+  // on scroll, since it is anchored to a sticky bar.
+  useEffect(() => {
+    setOpen(false)
+  }, [location.pathname, location.search])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onScroll = () => setOpen(false)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [open])
+
   return (
     <header className="topbar">
-<div className="brand">
+      <Link to={homeTo} className="brand" aria-label={`${BRAND.name} — league table`}>
         <BrandLogo compact />
         <span className="brand-name">
           <strong className="brand-title">{BRAND.name}</strong>
           <em className="brand-season">{BRAND.season}</em>
         </span>
-      </div>
+      </Link>
 
 <div className="topbar-right" ref={ref}>
         {onRefresh && (
@@ -91,7 +113,10 @@ export function Header({
             >
               <Trophy aria-hidden="true" />
               <span className="visually-hidden">Competitions</span>
-              <span>Comps</span>
+              <span className="comp-label-full">{activeComp ? activeComp.label : 'Comps'}</span>
+              <span className="comp-label-short" aria-hidden="true">
+                {activeComp ? activeComp.short || activeComp.label : 'Comps'}
+              </span>
               <ChevronDown aria-hidden="true" className={open ? 'rotated' : ''} />
             </button>
             {open && (

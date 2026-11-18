@@ -63,14 +63,16 @@ export function Fixtures({ gw }) {
   }, [state.rows])
 
   // Follow the global week: whichever gameweek the ScopeBar is scoped to stays
-  // expanded. Previously this only opened on first render, so changing the week
-  // left a different gameweek expanded.
+  // expanded. Adding the new week must not collapse groups the user opened
+  // deliberately to compare two rounds.
   useEffect(() => {
     if (byGw.length === 0) return
+    const target = byGw.some(([g]) => g === gw) ? gw : byGw[0][0]
     setOpen((prev) => {
-      const target = byGw.some(([g]) => g === gw) ? gw : byGw[0][0]
-      if (prev.size === 1 && prev.has(target)) return prev
-      return new Set([target])
+      if (prev.has(target)) return prev
+      const next = new Set(prev)
+      next.add(target)
+      return next
     })
   }, [byGw, gw])
 

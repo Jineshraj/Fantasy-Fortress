@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ShieldCheck, X } from 'lucide-react'
 import { ClubMark, PlayerPhoto } from './Imagery'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
+import { useModalChrome } from '@/lib/modalChrome'
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -19,6 +20,9 @@ export function FixtureOwnershipModal({ fixture, rows, status, error, onRetry, o
   const openerRef = useRef(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+
+  const close = useModalChrome(onClose)
+  onCloseRef.current = close
 
   useEffect(() => {
     openerRef.current = document.activeElement
@@ -57,7 +61,7 @@ export function FixtureOwnershipModal({ fixture, rows, status, error, onRetry, o
     <div
       className="modal-backdrop"
       role="presentation"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onMouseDown={(e) => e.target === e.currentTarget && close()}
     >
       <div
         ref={dialogRef}
@@ -69,7 +73,7 @@ export function FixtureOwnershipModal({ fixture, rows, status, error, onRetry, o
         <button
           type="button"
           className="modal-close"
-          onClick={onClose}
+          onClick={close}
           aria-label="Close ownership details"
         >
           <X />

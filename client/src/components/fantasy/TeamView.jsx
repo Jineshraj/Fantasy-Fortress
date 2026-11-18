@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, List, TriangleAlert, Users } from 'lucide-react'
 import { clearLiveCache, fetchGameweekStatus, fetchTeamSquad } from '@/data/live'
 import { PlayerCard } from './PlayerCard'
@@ -14,10 +14,30 @@ const LINE_POSITIONS = ['GKP', 'DEF', 'MID', 'FWD']
 const normPos = (pos) => (pos === 'GK' ? 'GKP' : pos)
 
 export function TeamView({ team, gw, latestGw, onGwChange }) {
-  const [view, setView] = useState('pitch')
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  // Pitch/List is a shareable view of the same team, so it lives in the URL.
+  const view = searchParams.get('view') === 'list' ? 'list' : 'pitch'
+  const setView = useCallback(
+    (next) => {
+      const params = new URLSearchParams(searchParams)
+      if (next === 'list') params.set('view', 'list')
+      else params.delete('view')
+      setSearchParams(params, { replace: true })
+    },
+    [searchParams, setSearchParams]
+  )
   const [selected, setSelected] = useState(null)
   const [state, setState] = useState({ status: 'loading', squad: null, error: null })
   const [statusText, setStatusText] = useState(null)
+
+  // In-app Back should follow the trail the user actually walked. Only a team
+  // page opened directly (deep link / refresh) falls back to the table.
+  const canGoBack = typeof window !== 'undefined' && (window.history.state?.idx ?? 0) > 0
+  const goBack = () => {
+    if (canGoBack) navigate(-1)
+    else navigate(`${ROUTES.table}${gw ? `?gw=${gw}` : ''}`, { replace: true })
+  }
 
   const load = useCallback((force = false) => {
     if (!team?.name) return
@@ -75,11 +95,11 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
 
   return (
     <section className="page-section team-page">
-      {/* Breadcrumb row: Back to table */}
+      {/* Breadcrumb row: Back follows history, or the table on a direct link */}
       <div className="team-breadcrumb-row">
-        <Link to={`${ROUTES.table}${gw ? `?gw=${gw}` : ''}`} className="back-link">
-          <ArrowLeft /> Back to table
-        </Link>
+        <button type="button" className="back-link" onClick={goBack}>
+          <ArrowLeft /> {canGoBack ? 'Back' : 'Back to table'}
+        </button>
       </div>
 
       {/* Hero row: Crest + Name / Manager */}
@@ -98,12 +118,15 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
       {/* 3-Pillar Unified Scoreboard: Previous GW | Current GW with Stepper | Season Total & Rank */}
       {state.status === 'ready' && totals && (
         <section className="team-three-pillar-card" aria-label={`Gameweek ${gw} score overview`}>
-          {/* Left Pillar: Previous Gameweek */}
-          <div
-            className={cn('pillar-col is-prev', totals.prevGw && onGwChange && 'is-clickable')}
+          {/* Left Pillar: Previous Gameweek (real button, not a clickable div) */}
+          <button
+            type="button"
+            className={cn(
+              'pillar-col is-prev',
+              totals.prevGw && onGwChange && 'is-clickable'
+            )}
             onClick={() => totals.prevGw && onGwChange?.(totals.prevGw)}
-            role={totals.prevGw && onGwChange ? 'button' : undefined}
-            tabIndex={totals.prevGw && onGwChange ? 0 : undefined}
+            disabled={!totals.prevGw || !onGwChange}
             title={totals.prevGw ? `View Gameweek ${totals.prevGw}` : undefined}
           >
             <span className="pillar-label">{totals.prevGw ? `GW ${totals.prevGw}` : 'PREV'}</span>
@@ -112,7 +135,7 @@ export function TeamView({ team, gw, latestGw, onGwChange }) {
               {totals.prevGwTotal != null && <small> pts</small>}
             </strong>
             <span className="pillar-sub">Previous</span>
-          </div>
+          </button>
 
           {/* Center Pillar: Active Gameweek + Stepper + Score + Status */}
           <div className="pillar-col is-current">

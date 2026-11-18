@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { Clock3, Search } from 'lucide-react'
 import { TeamMark } from './TeamMark'
 import { EmptyState } from '@/components/ui/states'
 import { SearchBox } from '@/components/ui/SearchBox'
 import { teamPath } from '@/lib/routes'
+import { KEYS, getSession, setSession } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 
 const gwPoints = (team, gw) => {
@@ -43,8 +44,17 @@ function useRanks(teams, gw) {
 }
 
 export function Leaderboard({ teams, latestGw, gw }) {
-  const [query, setQuery] = useState('')
+  const [query, setQueryState] = useState(() => getSession(KEYS.leaderboardQuery) ?? '')
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
+  const notice = location.state?.notice
+
+  // Search text is not worth a shareable URL, but it should survive leaving for
+  // a team page and coming back. Session memory gives that for free.
+  const setQuery = (next) => {
+    setQueryState(next)
+    setSession(KEYS.leaderboardQuery, next)
+  }
 
   // The Overall/Gameweek toggle is URL-addressable (?view=overall|gw) so the
   // app can tell whether the gameweek stepper belongs on this screen. The week
@@ -82,6 +92,14 @@ export function Leaderboard({ teams, latestGw, gw }) {
           <Clock3 /> through GW {week}
         </div>
       </div>
+
+      {notice && (
+        <div className="notice-strip" role="status">
+          {notice === 'team'
+            ? 'That team link no longer matches a team — showing the league table.'
+            : 'That page does not exist — showing the league table.'}
+        </div>
+      )}
 
       <div className="segmented" role="group" aria-label="Leaderboard scoring period">
         <button

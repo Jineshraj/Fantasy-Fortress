@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { PlayerPhoto } from './Imagery'
 import { fetchPlayerDetail } from '@/data/live'
 import { InlineError, LoadingBlock } from '@/components/ui/states'
+import { useModalChrome } from '@/lib/modalChrome'
 import { cn } from '@/lib/utils'
 
 const FOCUSABLE =
@@ -118,6 +119,11 @@ export function PlayerModal({ item, onClose, gw }) {
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
 
+  // Back / X / Escape / backdrop all close the sheet and leave the page's
+  // scroll position untouched.
+  const close = useModalChrome(onClose)
+  onCloseRef.current = close
+
   useEffect(() => {
     openerRef.current = document.activeElement
     const dialog = dialogRef.current
@@ -164,7 +170,7 @@ export function PlayerModal({ item, onClose, gw }) {
     <div
       className="modal-backdrop"
       role="presentation"
-      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+      onMouseDown={(e) => e.target === e.currentTarget && close()}
     >
       <div
         ref={dialogRef}
@@ -176,7 +182,7 @@ export function PlayerModal({ item, onClose, gw }) {
         <button
           type="button"
           className="modal-close"
-          onClick={onClose}
+          onClick={close}
           aria-label="Close player details"
         >
           <X />

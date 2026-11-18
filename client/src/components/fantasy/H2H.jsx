@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Swords, Trophy } from 'lucide-react'
 import { H2H_WEEKS, groupATeams, groupBTeams } from '@/data/tournamentFixtures'
 import { buildH2HStandings, buildH2HWeek, scoredGameweeks } from '@/data/live'
@@ -32,29 +33,39 @@ const GroupTable = ({ title, rows, scored }) => (
 )
 
 export function H2H() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const rawWeek = Number.parseInt(searchParams.get('week'), 10)
+  const validParam = H2H_WEEKS.some((w) => w.gw === rawWeek) ? rawWeek : null
+
   // Default to the last week in the schedule, corrected once we know which
-  // gameweeks actually have scores. GW 20 is the final scheduled round, so
-  // using it unconditionally meant the screen opened on 8 unscored matchups
-  // while GW 6 — the one week with real results — sat a tap away.
-  const [activeGw, setActiveGw] = useState(() => H2H_WEEKS[H2H_WEEKS.length - 1].gw)
-  const [corrected, setCorrected] = useState(false)
+  // gameweeks actually have scores. A ?week= in the URL always wins, so Back,
+  // refresh and a shared link all land on the round the user was viewing.
+  const [activeGw, setActiveGw] = useState(
+    () => validParam ?? H2H_WEEKS[H2H_WEEKS.length - 1].gw
+  )
   const [state, setState] = useState({ status: 'loading', week: null, standings: null, error: null })
 
   useEffect(() => {
-    if (corrected) return
+    if (validParam) return undefined
     let cancelled = false
     scoredGameweeks()
       .then((scored) => {
         if (cancelled || scored.size === 0) return
         const best = [...H2H_WEEKS].reverse().find((w) => scored.has(w.gw))
-        if (best && best.gw !== activeGw) setActiveGw(best.gw)
-        setCorrected(true)
+        if (best) setActiveGw((prev) => (prev === best.gw ? prev : best.gw))
       })
-      .catch(() => setCorrected(true))
+      .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [corrected, activeGw])
+  }, [validParam])
+
+  const selectWeek = (week) => {
+    setActiveGw(week)
+    const params = new URLSearchParams(searchParams)
+    params.set('week', String(week))
+    setSearchParams(params, { replace: true })
+  }
 
   const target = useMemo(
     () => H2H_WEEKS.find((w) => w.gw === activeGw) ?? H2H_WEEKS[0],
@@ -92,7 +103,7 @@ export function H2H() {
             type="button"
             className={activeGw === w.gw ? 'active' : ''}
             aria-pressed={activeGw === w.gw}
-            onClick={() => setActiveGw(w.gw)}
+            onClick={() => selectWeek(w.gw)}
           >
             GW {w.gw}
           </button>

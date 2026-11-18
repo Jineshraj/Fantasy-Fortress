@@ -5,7 +5,7 @@ import { PlayerPhoto } from './Imagery'
 import { TeamMark } from './TeamMark'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
 import { SearchBox } from '@/components/ui/SearchBox'
-import { KEYS, getStored, setStored } from '@/lib/storage'
+import { KEYS, getSession, getStored, setSession, setStored } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 
 const GROUPS = ['GKP', 'DEF', 'MID', 'FWD']
@@ -21,8 +21,21 @@ const normPos = (pos) => (pos === 'GK' ? 'GKP' : pos)
  * detail but never inflate the headline.
  */
 export function Squad({ teams, gw }) {
-  const [openGroup, setOpenGroup] = useState('GKP')
-  const [query, setQuery] = useState('')
+  const [openGroup, setOpenGroupState] = useState(() => {
+    const stored = getSession(KEYS.squadGroup)
+    return stored === null ? 'GKP' : stored || null
+  })
+  const [query, setQueryState] = useState(() => getSession(KEYS.squadQuery) ?? '')
+  // Search + accordion are view state, not URL state: remember them for the
+  // session so Back from a team page returns to the squad you were reading.
+  const setOpenGroup = (next) => {
+    setOpenGroupState(next)
+    setSession(KEYS.squadGroup, next ?? '')
+  }
+  const setQuery = (next) => {
+    setQueryState(next)
+    setSession(KEYS.squadQuery, next)
+  }
   // Remembered so returning to the tab shows the team you were actually looking
   // at, instead of defaulting to whoever is top of the standings.
   const [picked, setPicked] = useState(() => getStored(KEYS.lastTeam))

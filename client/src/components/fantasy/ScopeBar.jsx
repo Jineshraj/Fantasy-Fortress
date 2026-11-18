@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react'
 
 /**
  * Contextual gameweek stepper.
  *
  * One global week for the whole hub, but only on screens whose content is
- * actually gameweek-scoped. On `/table` in Overall mode, and on the H2H / Super
- * Cup competition screens, the bar is not mounted at all — a control that does
- * nothing is worse than no control.
+ * actually gameweek-scoped. On `/table` in Overall mode it keeps its height
+ * reserved but renders nothing; on the H2H / Super Cup screens and the team
+ * page it is not mounted at all.
  *
  * The persistent bar is a 34px pill: `‹ GW 6 ▾ ›`. Paging weeks stays in the
  * URL with `replace: true`, so three back-steps never cost three Back presses.
@@ -17,6 +18,7 @@ export function ScopeBar({ gw, latestGw, onChange, gameweeks = [], visible = tru
   const wrapRef = useRef(null)
   const toggleRef = useRef(null)
   const menuRef = useRef(null)
+  const location = useLocation()
 
   const maxGw = latestGw || 1
   const canPrev = gw > 1
@@ -50,6 +52,19 @@ export function ScopeBar({ gw, latestGw, onChange, gameweeks = [], visible = tru
 
   useEffect(() => {
     if (open) menuRef.current?.querySelector('button')?.focus()
+  }, [open])
+
+  // A menu anchored to a sticky bar must not survive the navigation that
+  // replaces the screen underneath it, nor follow the user down the page.
+  useEffect(() => {
+    setOpen(false)
+  }, [location.pathname, location.search])
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onScroll = () => setOpen(false)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
   }, [open])
 
   if (!visible) return null

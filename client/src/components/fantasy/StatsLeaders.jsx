@@ -1,20 +1,46 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { fetchStatLeaders } from '@/data/live'
 import { PlayerPhoto } from './Imagery'
 import { EmptyState, InlineError, LoadingBlock } from '@/components/ui/states'
 import { SearchBox } from '@/components/ui/SearchBox'
+import { KEYS, getSession, setSession } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 
 const POS_FILTERS = ['ALL', 'GKP', 'DEF', 'MID', 'FWD']
 const normPos = (pos) => (pos === 'GK' ? 'GKP' : pos)
 
 export function StatsLeaders({ gw }) {
-  const [query, setQuery] = useState('')
-  const [pos, setPos] = useState('ALL')
-  const [board, setBoard] = useState('gw')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [query, setQueryState] = useState(() => getSession(KEYS.statsQuery) ?? '')
   const [state, setState] = useState({ status: 'loading', rows: null, error: null })
   const q = query.trim().toLowerCase()
+
+  // Period + position are shareable views of this screen, so they live in the
+  // URL and survive Back. Search text stays in session memory.
+  const board = searchParams.get('board') === 'season' ? 'season' : 'gw'
+  const rawPos = searchParams.get('pos')
+  const pos = POS_FILTERS.includes(rawPos) ? rawPos : 'ALL'
+
+  const setBoard = (next) => {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'season') params.set('board', 'season')
+    else params.delete('board')
+    setSearchParams(params, { replace: true })
+  }
+
+  const setPos = (next) => {
+    const params = new URLSearchParams(searchParams)
+    if (next && next !== 'ALL') params.set('pos', next)
+    else params.delete('pos')
+    setSearchParams(params, { replace: true })
+  }
+
+  const setQuery = (next) => {
+    setQueryState(next)
+    setSession(KEYS.statsQuery, next)
+  }
 
   const load = useCallback(() => {
     setState({ status: 'loading', rows: null, error: null })

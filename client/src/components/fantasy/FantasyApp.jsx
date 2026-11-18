@@ -32,13 +32,13 @@ import { KEYS, getStored } from '@/lib/storage'
 const TABS = [
   { to: ROUTES.table, label: 'Table', Icon: ListOrdered },
   { to: ROUTES.squad, label: 'Squad', Icon: Users },
-  { to: ROUTES.fixtures, label: 'Fix', Icon: CalendarDays },
+  { to: ROUTES.fixtures, label: 'Fixtures', Icon: CalendarDays },
   { to: ROUTES.stats, label: 'Stats', Icon: Medal },
 ]
 
 const COMPETITIONS = [
-  { to: ROUTES.h2h, label: 'H2H League', Icon: Swords },
-  { to: ROUTES.cup, label: 'Super Cup', Icon: Trophy },
+  { to: ROUTES.h2h, label: 'H2H League', short: 'H2H', Icon: Swords },
+  { to: ROUTES.cup, label: 'Super Cup', short: 'Cup', Icon: Trophy },
 ]
 
 const COMPETITION_ID = { [ROUTES.h2h]: 'h2h', [ROUTES.cup]: 'supercup' }
@@ -108,6 +108,35 @@ export function FantasyApp() {
   const [searchParams, setSearchParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
+
+  // A successful unlock strips ?lock / ?reset with replace. Otherwise a refresh
+  // re-runs the stage initializer, sees the param, deletes the stored unlock and
+  // shows the gate again — through no fault of the user.
+  const onUnlock = useCallback(() => {
+    setStage('splash')
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('lock') || params.has('reset')) {
+      params.delete('lock')
+      params.delete('reset')
+      const qs = params.toString()
+      navigate(
+        { pathname: window.location.pathname, search: qs ? `?${qs}` : '' },
+        { replace: true }
+      )
+    }
+  }, [navigate])
+
+  // Announce a new screen to keyboard / screen-reader users. Search-only
+  // changes (?gw=, ?view=) keep focus on the control they just used.
+  const previousPath = useRef(location.pathname)
+  useEffect(() => {
+    if (previousPath.current === location.pathname) return
+    previousPath.current = location.pathname
+    const heading = document.querySelector('.app-content h1')
+    if (!heading) return
+    heading.setAttribute('tabindex', '-1')
+    heading.focus({ preventScroll: true })
+  }, [location.pathname])
 
   // Tier 1 starts on mount — even while the access gate is showing — so a
   // first-time visitor's unlock does not begin from a cold cache. This effect
@@ -270,7 +299,7 @@ export function FantasyApp() {
     document.title = `${routeTitle(location.pathname)} · ${TITLE_SUFFIX}`
   }, [location.pathname])
 
-  if (stage === 'access') return <Access onSuccess={() => setStage('splash')} />
+  if (stage === 'access') return <Access onSuccess={onUnlock} />
   if (stage === 'splash') return <Splash done={boot.progress.done} failed={boot.progress.failed} />
 
   if (boot.status === 'error' || !boot.data) {
@@ -351,7 +380,10 @@ export function FantasyApp() {
               }
             />
             {/* Unknown or stale link (renamed team, hand-typed path) */}
-            <Route path="*" element={<Navigate to={DEFAULT_ROUTE} replace />} />
+            <Route
+              path="*"
+              element={<Navigate to={DEFAULT_ROUTE} replace state={{ notice: 'notfound' }} />}
+            />
           </Routes>
         </ErrorBoundary>
       </div>
@@ -385,6 +417,6 @@ export function FantasyApp() {
 function TeamRoute({ teams, gw, latestGw, onGwChange }) {
   const { slug } = useParams()
   const team = findTeamBySlug(teams, slug)
-  if (!team) return <Navigate to={DEFAULT_ROUTE} replace />
+  if (!team) return <Navigate to={DEFAULT_ROUTE} replace state={{ notice: 'team' }} />
   return <TeamView team={team} gw={gw} latestGw={latestGw} onGwChange={onGwChange} />
 }
