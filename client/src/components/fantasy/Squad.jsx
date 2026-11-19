@@ -239,7 +239,15 @@ export function Squad({ teams, gw }) {
                             <span>
                               <PlayerPhoto player={p} />
                               <span>
-                                <strong>{p.name}</strong>
+                                <span className="squad-name-line">
+                                  <strong>{p.name}</strong>
+                                  {p.displayState === 'AUTO_SUB_OUT' && (
+                                    <span className="player-state-badge badge-auto-out">OUT</span>
+                                  )}
+                                  {p.displayState === 'AUTO_SUB_IN' && (
+                                    <span className="player-state-badge badge-auto-in">IN</span>
+                                  )}
+                                </span>
                                 <small>{p.club}</small>
                               </span>
                             </span>

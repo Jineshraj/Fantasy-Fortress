@@ -48,11 +48,10 @@ function FixtureBlock({ match, full = false }) {
   )
 }
 
-function PointsBlock({ value, full = false, multiplier = 1, stadiumBonus = 0 }) {
+function PointsBlock({ value, full = false }) {
   const n = Number(value)
   const isHaul = Number.isFinite(n) && n >= 6
   const isNegative = Number.isFinite(n) && n < 0
-  const bonus = Number(stadiumBonus) || 0
   return (
     <span
       className={cn(
@@ -65,10 +64,6 @@ function PointsBlock({ value, full = false, multiplier = 1, stadiumBonus = 0 }) 
       <span className="player-points-value">
         {value === null || value === undefined ? '—' : value}
       </span>
-      {full && multiplier === 2 && <span className="player-mult-tag">×2</span>}
-      {full && bonus !== 0 && (
-        <span className="player-bonus-tag">{bonus > 0 ? `+${bonus}` : `−${Math.abs(bonus)}`}</span>
-      )}
     </span>
   )
 }
@@ -85,7 +80,8 @@ function TextBlock({ label, variant = 'is-empty', full = false }) {
  * The bottom block shows exactly one thing: the fixture while it is still to be
  * played, or the points once the nightly sync has landed. A double gameweek
  * splits the block 1fr / 1fr until both matches are finished, then collapses to
- * the authoritative `final_points` (with ×2 / stadium bonus made explicit).
+ * the authoritative `final_points` — already including the captain multiplier
+ * and stadium bonus. The bolt is the only extra stadium-bonus signal.
  */
 export function PlayerCard({
   item,
@@ -103,11 +99,9 @@ export function PlayerCard({
   const isVice = ccy?.designation === 'VC'
   const isSubOut = state === 'AUTO_SUB_OUT'
   const isSubIn = state === 'AUTO_SUB_IN'
-  const posKey = item?.pos ? item.pos.toLowerCase() : ''
 
   const matches = matchesProp ?? item?.matches ?? []
   const isDouble = matches.length > 1
-  const multiplier = Number(item?.multiplier) === 2 ? 2 : 1
   const stadiumBonus = Number(item?.stadiumBonus) || 0
   const finalPoints = item?.finalPoints ?? null
   const hasFinalPoints = finalPoints !== null && finalPoints !== undefined
@@ -155,8 +149,6 @@ export function PlayerCard({
         <PointsBlock
           value={finalPoints}
           full
-          multiplier={multiplier}
-          stadiumBonus={stadiumBonus}
         />
       ) : (
         <TextBlock label="—" full />
@@ -170,8 +162,6 @@ export function PlayerCard({
             <PointsBlock
               value={finalPoints}
               full
-              multiplier={multiplier}
-              stadiumBonus={stadiumBonus}
             />
           )
         }
@@ -182,8 +172,6 @@ export function PlayerCard({
           <PointsBlock
             value={finalPoints}
             full
-            multiplier={multiplier}
-            stadiumBonus={stadiumBonus}
           />
         ) : (
           <TextBlock label="—" full />
@@ -213,8 +201,6 @@ export function PlayerCard({
           <PointsBlock
             value={finalPoints}
             full
-            multiplier={multiplier}
-            stadiumBonus={stadiumBonus}
           />
         )
       }
@@ -226,8 +212,6 @@ export function PlayerCard({
           <PointsBlock
             value={finalPoints}
             full
-            multiplier={multiplier}
-            stadiumBonus={stadiumBonus}
           />
         )
       }
@@ -241,7 +225,8 @@ export function PlayerCard({
 
   const isSplit = isDouble && !allFinished
   const hasOpp = Boolean(opp?.code)
-  const hasStadiumBonus = Boolean(item?.stadiumBonus && Number(item.stadiumBonus) > 0)
+  const hasStadiumBonus = stadiumBonus !== 0
+  const subChip = isSubOut ? 'OUT' : isSubIn ? 'IN' : null
   const allScheduled =
     matches.length > 0 && matches.every((m) => statusOf(m) === 'SCHEDULED')
 
@@ -261,7 +246,6 @@ export function PlayerCard({
       type="button"
       className={cn(
         'player-card-unit',
-        posKey && `pos-${posKey}`,
         gold && 'is-captain',
         isVice && 'is-vice',
         compact && 'is-bench',
@@ -285,9 +269,11 @@ export function PlayerCard({
         </div>
         {hasStadiumBonus && (
           <span
-            className="player-event-bolt"
-            title={`Stadium bonus: +${item.stadiumBonus} pt${Number(item.stadiumBonus) > 1 ? 's' : ''}`}
-            aria-label="Stadium bonus"
+            className={cn('player-event-bolt', stadiumBonus < 0 && 'is-negative')}
+            title={`Stadium bonus: ${stadiumBonus > 0 ? '+' : ''}${stadiumBonus} pt${
+              Math.abs(stadiumBonus) > 1 ? 's' : ''
+            }`}
+            aria-label={`Stadium bonus ${stadiumBonus > 0 ? 'plus' : 'minus'} ${Math.abs(stadiumBonus)}`}
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="#1a0033" />
@@ -298,6 +284,11 @@ export function PlayerCard({
 
       <div className="player-plaque">
         <div className="player-name-wrap">
+          {subChip && (
+            <span className={cn('player-sub-chip', isSubOut ? 'is-out' : 'is-in')}>
+              {subChip}
+            </span>
+          )}
           <strong className="player-name">{item.short || item.name}</strong>
         </div>
 

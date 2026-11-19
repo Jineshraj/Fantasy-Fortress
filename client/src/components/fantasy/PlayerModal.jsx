@@ -164,6 +164,15 @@ export function PlayerModal({ item, onClose, gw }) {
 
   const club = detail?.club ?? item?.club ?? ''
   const position = detail?.position ?? item?.pos ?? '—'
+  const displayState = detail?.displayState ?? item?.displayState
+  const subState =
+    displayState === 'AUTO_SUB_OUT'
+      ? { label: 'OUT', className: 'badge-auto-out' }
+      : displayState === 'AUTO_SUB_IN'
+        ? { label: 'IN', className: 'badge-auto-in' }
+        : displayState === 'BENCH_UNUSED'
+          ? { label: 'UNUSED', className: 'badge-neutral' }
+          : null
   const total = detail?.gameweek?.totalPoints ?? item?.points ?? null
 
   return (
@@ -199,6 +208,9 @@ export function PlayerModal({ item, onClose, gw }) {
                 </b>
               )}
               {ccy?.designation === 'VC' && <b className="player-state-badge badge-vice">VC</b>}
+              {subState && (
+                <b className={cn('player-state-badge', subState.className)}>{subState.label}</b>
+              )}
             </span>
             <h2 id="player-modal-title">{detail?.name ?? item?.name}</h2>
             <p className="modal-total">

@@ -482,6 +482,8 @@
 .squad-row small { color: var(--muted-foreground); }
 .squad-row>span:first-child { min-width: 0; display: flex; align-items: center; gap: 8px; }
 .squad-row>span:first-child>span:last-child { min-width: 0; display: flex; flex-direction: column; }
+.squad-name-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.squad-name-line strong { flex: 0 1 auto; min-width: 0; }
 .squad-row strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--card-foreground); font-family: var(--font-body); font-weight: 600; font-size: 13.5px; }
 .squad-row small { color: var(--muted-foreground); }
 .squad-row>strong:last-child { color: var(--primary); }
@@ -1495,7 +1497,7 @@ h1, h2, h3 { letter-spacing: -.03em; }
   border-radius: 12px;
 }
 
-/* --- The Avatar Disk (Circular Medallion with Position Ring Halo) --- */
+/* --- The Avatar Disk (Circular Medallion) --- */
 .player-avatar-disk {
   position: relative;
   z-index: 2;
@@ -1503,7 +1505,7 @@ h1, h2, h3 { letter-spacing: -.03em; }
   height: 48px;
   border-radius: 50%;
   border: 3px solid var(--ff-ink);
-  box-shadow: inset 0 0 0 4.5px var(--pos-ring, #ffffff), 3px 3px 0 var(--ff-ink);
+  box-shadow: 3px 3px 0 var(--ff-ink);
   background: #ffffff;
   display: flex;
   align-items: center;
@@ -1515,18 +1517,11 @@ h1, h2, h3 { letter-spacing: -.03em; }
   transform: scale(1.05);
 }
 
-/* Position Ring Colors from MyTeamPitch */
-.player-card-unit.pos-gkp { --pos-ring: #ffd23f; }
-.player-card-unit.pos-def { --pos-ring: #4cb8ff; }
-.player-card-unit.pos-mid { --pos-ring: #3dffa0; }
-.player-card-unit.pos-fwd { --pos-ring: #ff7aa8; }
-.player-card-unit.is-sub-out { --pos-ring: #ff5c6c; }
-
 .player-photo-circle {
   position: absolute;
-  inset: 4px;
-  width: calc(100% - 8px);
-  height: calc(100% - 8px);
+  inset: 2px;
+  width: calc(100% - 4px);
+  height: calc(100% - 4px);
   border-radius: 50%;
   overflow: hidden;
   display: flex;
@@ -1540,8 +1535,8 @@ h1, h2, h3 { letter-spacing: -.03em; }
   border-radius: 50%;
 }
 .player-photo-circle .shirt {
-  width: 32px;
-  height: 32px;
+  width: 84%;
+  height: 84%;
   font-size: 9px;
   border-radius: 50%;
   clip-path: none;
@@ -1591,6 +1586,12 @@ h1, h2, h3 { letter-spacing: -.03em; }
   width: 9px;
   height: 9px;
 }
+.player-event-bolt.is-negative {
+  background: var(--ff-danger);
+}
+.player-event-bolt.is-negative svg path {
+  fill: #ffffff;
+}
 
 /* --- The Rectangular Plaque (Tucked Under Avatar Disk) --- */
 .player-plaque {
@@ -1612,18 +1613,32 @@ h1, h2, h3 { letter-spacing: -.03em; }
 
 .player-name-wrap {
   width: 100%;
-  padding: 2px 2px 4px;
+  padding: 2px 3px 4px;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
+  gap: 3px;
   min-height: 24px;
 }
 
+.player-sub-chip {
+  flex: 0 0 auto;
+  padding: 1px 2.5px;
+  border: 1.5px solid var(--ff-ink);
+  border-radius: 3px;
+  font: 900 8px/1 var(--font-heading);
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.player-sub-chip.is-out { background: #c4152b; color: #ffffff; }
+.player-sub-chip.is-in { background: #3dffa0; color: var(--ff-ink); }
+
 .player-card-unit .player-name {
   max-width: 100%;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1733,31 +1748,6 @@ h1, h2, h3 { letter-spacing: -.03em; }
   background: var(--ff-danger) !important;
   color: #ffffff !important;
 }
-.player-points-cell.is-out {
-  background: #c4152b !important;
-  color: #ffffff !important;
-  font-size: 9px;
-  letter-spacing: .04em;
-}
-.player-points-cell.is-in {
-  background: #3dffa0 !important;
-  color: var(--ff-ink) !important;
-  font-size: 8.5px;
-  gap: 2px;
-}
-.player-points-cell.is-in small {
-  font-size: 7px;
-  background: var(--ff-ink);
-  color: #ffffff;
-  padding: 0 2px;
-  border-radius: 2px;
-}
-.player-points-cell.is-yet-to-play {
-  background: #e9dcff !important;
-  color: var(--ff-ink) !important;
-  font-size: 8.5px;
-  letter-spacing: .03em;
-}
 
 /* Full-width state machine blocks: fixture, points, LIVE, PPD / —. */
 .player-points-cell.is-full {
@@ -1777,28 +1767,6 @@ h1, h2, h3 { letter-spacing: -.03em; }
 .player-points-value {
   display: inline-block;
 }
-.player-mult-tag,
-.player-bonus-tag {
-  font: 900 8px/1 var(--font-heading);
-  letter-spacing: 0;
-}
-.player-mult-tag {
-  opacity: .85;
-}
-.player-bonus-tag {
-  padding: 1px 2px;
-  border-radius: 2px;
-  background: #ffd23f;
-  color: var(--ff-ink);
-}
-.player-points-cell.is-haul .player-bonus-tag {
-  background: var(--ff-ink);
-  color: #ffffff;
-}
-.player-points-cell.is-negative .player-bonus-tag {
-  background: #ffffff;
-  color: var(--ff-danger);
-}
 
 /* --- Card State Variations --- */
 .player-card-unit.is-captain .player-name-wrap {
@@ -1812,13 +1780,10 @@ h1, h2, h3 { letter-spacing: -.03em; }
 }
 
 .player-card-unit.is-sub-out .player-name-wrap {
-  background: repeating-linear-gradient(
-    45deg,
-    #ffd0d6 0,
-    #ffd0d6 5px,
-    #fff 5px,
-    #fff 10px
-  );
+  background: #ffd0d6;
+}
+.player-card-unit.is-sub-in .player-name-wrap {
+  background: #d6ffe9;
 }
 .player-card-unit.is-sub-out .player-plaque {
   border-color: #c4152b;
@@ -1841,13 +1806,34 @@ h1, h2, h3 { letter-spacing: -.03em; }
   border-color: #3dffa0;
 }
 
-/* --- Bench Ticket-Stub Variations --- */
-.bench-col .player-plaque {
-  border-style: dashed;
-  box-shadow: 3px 3px 0 #6a1fd0;
+/* --- Sub-state chips (list, modal, squad) --- */
+.player-state-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 1.5px 4px;
+  border: 1.5px solid var(--ff-ink);
+  border-radius: 3px;
+  font: 900 8.5px/1 var(--font-heading);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.bench-col .player-avatar-disk {
+.player-state-badge.badge-auto-out { background: #c4152b; color: #ffffff; }
+.player-state-badge.badge-auto-in { background: #3dffa0; color: var(--ff-ink); }
+.player-state-badge.badge-neutral { background: #c9c3d4; color: #4a4356; }
+.player-state-badge.badge-captain { background: #ffd23f; color: var(--ff-ink); }
+.player-state-badge.badge-captain-handover {
+  background: #ffd23f;
+  color: var(--ff-ink);
   border-style: dashed;
+}
+.player-state-badge.badge-vice { background: #ffffff; color: var(--ff-ink); }
+
+/* --- Bench Variations --- */
+.bench-col .player-plaque {
+  box-shadow: 3px 3px 0 #6a1fd0;
 }
 
 .player-card-unit.is-bench-unused {
