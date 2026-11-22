@@ -9,79 +9,320 @@ import { cn } from '@/lib/utils'
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-// Display order from uiux-improvements.md §3.1 — Minutes … Total.
-const LABELS = {
-  minutes: 'Minutes',
-  goals: 'Goals',
-  assists: 'Assists',
-  clean_sheet: 'Clean sheet',
-  cleanSheet: 'Clean sheet',
-  bonus: 'Bonus',
-  cards: 'Cards',
-  own_goals: 'Own goals',
-  ownGoals: 'Own goals',
-  penalty_save: 'Penalty save',
-  penaltySave: 'Penalty save',
-  penalty_miss: 'Penalty miss',
-  penaltyMiss: 'Penalty miss',
-  yellow_cards: 'Cards',
-  red_cards: 'Cards',
-}
-
 const signed = (n) => (n > 0 ? `+${n}` : `${n}`)
 
+const num = (value) => (Number.isFinite(Number(value)) ? Number(value) : 0)
+
+const rateOf = (points, count) => {
+  if (!count) return 0
+  return Math.round(num(points) / count)
+}
+
+const cardsText = (yellow, red) => {
+  const parts = []
+  if (yellow > 0) parts.push(`${yellow} yellow${yellow === 1 ? '' : 's'}`)
+  if (red > 0) parts.push(`${red} red${red === 1 ? '' : 's'}`)
+  return parts.join(', ') || '0'
+}
+
+const parseCards = (value) => {
+  const m = /(\d+)\s*Y\s*(\d+)\s*R/i.exec(String(value ?? ''))
+  return m ? { yellow: Number(m[1]), red: Number(m[2]) } : { yellow: 0, red: 0 }
+}
+
 /**
- * Ledger rows. The server's itemized `points_breakdown` wins outright; until it
- * exists the card degrades to `Base points (server)` plus a pending note
- * instead of inventing a `Bonus` line. The displayed total is always
- * `final_points` read from the row — never a sum of the rows above it.
+ * Filtered stat rows. A line appears only when it actually contributed: its
+ * points are non-zero, or its count is non-zero. Appearance is the anchor and
+ * always shows; a clean sheet only shows when it scored (so a MID/FWD never
+ * gets a "0 +0" row). Values carry the rate where that makes the maths
+ * checkable without memorising the scoring table.
  */
-function buildLedger(detail) {
-  const bd = detail.pointsBreakdown
+function buildStatRows(items, stats = {}) {
+  if (!Array.isArray(items) || items.length === 0) return []
+  const byKey = new Map(items.map((it) => [String(it.key ?? it.name ?? ''), it]))
   const rows = []
 
-  if (bd?.available && bd.items.length > 0) {
-    bd.items.forEach((it, i) => {
-      const key = String(it.key ?? it.name ?? i)
-      rows.push({
-        key,
-        label: LABELS[key] ?? it.label ?? key,
-        value: it.value ?? '',
-        points: Number(it.points ?? 0),
+  const push = (key, label, value, points) => {
+    rows.push({ key, label, value, points: num(points) })
+  }
+
+  const minutes = byKey.get('minutes')
+  if (minutes) push('minutes', 'Appearance', minutes.value ?? '', minutes.points)
+
+  const goals = num(byKey.get('goals')?.value)
+  const goalPts = num(byKey.get('goals')?.points)
+  if (goals > 0) {
+    push('goals', 'Goals', `${goals} × ${rateOf(goalPts, goals)}`, goalPts)
+  }
+
+  const assists = num(byKey.get('assists')?.value)
+  const assistPts = num(byKey.get('assists')?.points)
+  if (assists > 0) {
+    push('assists', 'Assists', `${assists} × ${rateOf(assistPts, assists)}`, assistPts)
+  }
+
+  const cleanSheet = byKey.get('clean_sheet')
+  if (cleanSheet && num(cleanSheet.points) > 0) {
+    push('clean_sheet', 'Clean sheet', 'Yes', cleanSheet.points)
+  }
+
+  const bonus = byKey.get('bonus')
+  if (bonus && num(bonus.points) > 0) {
+    const trigger =
+      goals >= 3 ? `${goals} goals` : assists >= 3 ? `${assists} assists` : bonus.value || 'Hat-trick'
+    push('bonus', 'Hat-trick bonus', trigger, bonus.points)
+  }
+
+  const cards = byKey.get('cards')
+  if (cards) {
+    const counts = Number.isFinite(Number(stats.yellowCards))
+      ? { yellow: num(stats.yellowCards), red: num(stats.redCards) }
+      : parseCards(cards.value)
+    if (counts.yellow > 0 || counts.red > 0 || num(cards.points) !== 0) {
+      push('cards', 'Cards', cardsText(counts.yellow, counts.red), cards.points)
+    }
+  }
+
+  const ownGoals = byKey.get('own_goals')
+  if (ownGoals && num(ownGoals.value) > 0) {
+    push('own_goals', 'Own goals', ownGoals.value, ownGoals.points)
+  }
+
+  const penaltySave = byKey.get('penalty_save')
+  if (penaltySave && num(penaltySave.value) > 0) {
+    push('penalty_save', 'Penalty save', penaltySave.value, penaltySave.points)
+  }
+
+  const penaltyMiss = byKey.get('penalty_miss')
+  if (penaltyMiss && num(penaltyMiss.value) > 0) {
+    push('penalty_miss', 'Penalty miss', penaltyMiss.value, penaltyMiss.points)
+  }
+
+  return rows
+}
+
+/**
+ * Itemized breakdown for a player or match. Uses server `pointsBreakdown` if available,
+ * otherwise derives the exact breakdown from the player's recorded match stats.
+ * If the derived sum matches the authoritative base points, the breakdown is 100% verified.
+ */
+function deriveBreakdown(detail) {
+  if (!detail) return { items: [], available: false }
+  const bd = detail.pointsBreakdown
+  if (bd?.available && Array.isArray(bd.items) && bd.items.length > 0) {
+    return { items: bd.items, available: true }
+  }
+
+  const pos = String(detail.position || detail.pos || 'MID').toUpperCase()
+  const isGK = pos === 'GKP' || pos === 'GK' || pos === 'G'
+  const isDEF = pos === 'DEF' || pos === 'D'
+  const isMID = pos === 'MID' || pos === 'M'
+
+  const minutes = num(detail.minutes)
+  const goals = num(detail.goals)
+  const assists = num(detail.assists)
+  const cleanSheet = Boolean(detail.cleanSheet || detail.clean_sheet)
+  const yellow = num(detail.yellowCards || detail.yellow_cards)
+  const red = num(detail.redCards || detail.red_cards)
+  const ownGoals = num(detail.ownGoals || detail.own_goals)
+  const penSave = num(detail.penaltySave || detail.penalty_save)
+  const penMiss = num(detail.penaltyMiss || detail.penalty_miss)
+
+  const minutesPts = minutes >= 60 ? 2 : minutes >= 1 ? 1 : 0
+  const goalRate = isGK ? 10 : isDEF ? 6 : isMID ? 5 : 4
+  const goalsPts = goals * goalRate
+  const assistRate = isGK ? 5 : 3
+  const assistsPts = assists * assistRate
+  const cleanSheetPts = cleanSheet && minutes >= 60 ? (isGK ? 5 : isDEF ? 4 : 0) : 0
+  const penSavePts = penSave * 5
+  const penMissPts = -penMiss * 3
+  const cardsPts = red >= 1 ? -red * 3 : -yellow * 1
+  const ownGoalsPts = -ownGoals * 2
+  const bonusPts = goals >= 3 || assists >= 3 ? 3 : 0
+
+  const items = [
+    { key: 'minutes', label: 'Minutes', value: `${minutes}'`, points: minutesPts },
+    { key: 'goals', label: 'Goals', value: goals, points: goalsPts },
+    { key: 'assists', label: 'Assists', value: assists, points: assistsPts },
+    { key: 'clean_sheet', label: 'Clean sheet', value: cleanSheet ? 'Yes' : 'No', points: cleanSheetPts },
+    { key: 'bonus', label: 'Hat-trick bonus', value: bonusPts ? 'Hat-trick' : '—', points: bonusPts },
+    { key: 'cards', label: 'Cards', value: `${yellow}Y ${red}R`, points: cardsPts },
+    { key: 'own_goals', label: 'Own goals', value: ownGoals, points: ownGoalsPts },
+    { key: 'penalty_save', label: 'Penalty save', value: penSave, points: penSavePts },
+    { key: 'penalty_miss', label: 'Penalty miss', value: penMiss, points: penMissPts },
+  ]
+
+  const calculatedBase = items.reduce((sum, it) => sum + it.points, 0)
+  const rawBase =
+    detail.basePoints !== null && detail.basePoints !== undefined
+      ? detail.basePoints
+      : detail.gameweek?.totalPoints ?? detail.totalPoints
+  const base = num(rawBase)
+
+  if (calculatedBase === base) {
+    return { items, available: true }
+  }
+
+  return { items: [], available: false }
+}
+
+/**
+ * Ledger rows: only the stat lines that happened, then the Base points
+ * subtotal (only when modifiers like bonus or multiplier exist), the stadium bonus,
+ * the captain formula (only when ×2), and the authoritative total.
+ */
+function buildLedger(detail) {
+  const breakdown = deriveBreakdown(detail)
+  const rows = []
+  const available = breakdown.available
+  const bonus = num(detail.stadiumBonus)
+  const multiplier = Number(detail.multiplier) === 2 ? 2 : 1
+  const rawBase = detail.basePoints
+  const base =
+    rawBase === null || rawBase === undefined || rawBase === '' || !Number.isFinite(Number(rawBase))
+      ? null
+      : Number(rawBase)
+  const total = detail.gameweek?.totalPoints ?? null
+
+  if (available) {
+    rows.push(
+      ...buildStatRows(breakdown.items, {
+        goals: detail.goals,
+        assists: detail.assists,
+        yellowCards: detail.yellowCards,
+        redCards: detail.redCards,
       })
-    })
+    )
+    // Only show a Base points subtotal row if there is a stadium bonus or multiplier
+    // that modifies the score. When there are no modifiers, stats sum directly into Total.
+    if ((bonus !== 0 || multiplier === 2) && base !== null) {
+      rows.push({ key: 'base', label: 'Base points', value: '', points: base })
+    }
   } else {
     rows.push({
       key: 'base',
-      label: 'Base points (server)',
+      label: 'Base points',
       value: detail.minutes ? `${detail.minutes}'` : '',
-      points: detail.basePoints,
+      points: base,
       pending: true,
     })
   }
 
-  rows.push({
-    key: 'stadium_bonus',
-    label: 'Stadium bonus',
-    value: '',
-    points: detail.stadiumBonus,
-  })
-  rows.push({
-    key: 'multiplier',
-    label: 'Multiplier',
-    value: '',
-    points: detail.multiplier === 2 ? 2 : 1,
-    multiplier: true,
-  })
-  rows.push({
-    key: 'total',
-    label: 'Total',
-    value: '',
-    points: detail.gameweek.totalPoints,
-    total: true,
-  })
+  if (detail.displayState === 'AUTO_SUB_OUT') {
+    rows.push({
+      key: 'sub-out-note',
+      label: 'Auto-subbed out (points transferred to bench)',
+      note: true,
+    })
+    rows.push({ key: 'total', label: 'Total', points: total, total: true })
+    return { rows, pending: !available }
+  }
 
-  return rows
+  if (bonus !== 0) {
+    rows.push({ key: 'stadium_bonus', label: 'Stadium bonus', value: '', points: bonus })
+  }
+
+  if (multiplier === 2) {
+    const formula =
+      base === null
+        ? '×2'
+        : bonus !== 0
+          ? `(${base} ${bonus > 0 ? '+' : '−'} ${Math.abs(bonus)}) × 2`
+          : `${base} × 2`
+    rows.push({
+      key: 'captain',
+      label: detail.captaincy?.handedOver ? 'Captain (VC) ×2' : 'Captain ×2',
+      value: formula,
+      formula: true,
+    })
+  }
+
+  rows.push({ key: 'total', label: 'Total', points: total, total: true })
+  return { rows, pending: !available }
+}
+
+const formatKickoff = (value) => {
+  const raw = String(value ?? '').trim()
+  if (!raw || raw.toUpperCase() === 'TBD') return ''
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+  const date = new Date(dateOnly ? `${raw}T00:00:00` : raw)
+  if (Number.isNaN(date.getTime())) return raw
+  const options = dateOnly
+    ? { weekday: 'short', day: 'numeric', month: 'short' }
+    : { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
+  return new Intl.DateTimeFormat('en-GB', options).format(date)
+}
+
+const hasScore = (result) => {
+  const home = result?.home
+  const away = result?.away
+  return (
+    home !== null &&
+    home !== undefined &&
+    home !== '' &&
+    Number.isFinite(Number(home)) &&
+    away !== null &&
+    away !== undefined &&
+    away !== '' &&
+    Number.isFinite(Number(away))
+  )
+}
+
+const fixtureLine = (match) => {
+  const venue = match?.venue === 'home' ? 'Home vs' : match?.venue === 'away' ? 'Away at' : 'vs'
+  const opponent = match?.opponent?.name || match?.opponent?.code || '—'
+  const status = String(match?.result?.status || '').toUpperCase()
+  const score = hasScore(match?.result) ? `${match.result.home}–${match.result.away}` : ''
+
+  let meta = ''
+  if (status === 'LIVE' || status === 'INPLAY' || status === 'IN_PLAY') {
+    meta = score ? `LIVE ${score}` : 'LIVE'
+  } else if (status === 'FINISHED' || status === 'FT') {
+    meta = score ? `FT ${score}` : 'FT'
+  } else if (status === 'POSTPONED') {
+    meta = 'PPD'
+  } else if (status === 'CANCELLED' || status === 'CANCELED') {
+    meta = 'Cancelled'
+  } else if (status === 'ABANDONED') {
+    meta = 'Abandoned'
+  } else if (status === 'SUSPENDED') {
+    meta = 'Suspended'
+  } else if (status === 'AWARDED') {
+    meta = 'Awarded'
+  } else {
+    meta = formatKickoff(match?.kickoff)
+  }
+
+  return { main: `${venue} ${opponent}`, meta }
+}
+
+function LedgerRow({ row }) {
+  return (
+    <div
+      className={cn(
+        'points-ledger-row',
+        row.points < 0 && 'is-negative',
+        row.total && 'is-total',
+        row.note && 'is-note'
+      )}
+    >
+      <span className="ledger-label">{row.label}</span>
+      {!row.note && (
+        <>
+          <span className="ledger-value">{row.value || ''}</span>
+          <b className="ledger-points">
+            {row.formula
+              ? ''
+              : row.points === null || row.points === undefined
+                ? '—'
+                : row.total
+                  ? row.points
+                  : signed(row.points)}
+          </b>
+        </>
+      )}
+    </div>
+  )
 }
 
 export function PlayerModal({ item, onClose, gw }) {
@@ -155,11 +396,32 @@ export function PlayerModal({ item, onClose, gw }) {
 
   const detail = state.detail
   const ccy = detail?.captaincy ?? item?.captaincy
-  const rows = useMemo(() => (detail ? buildLedger(detail) : []), [detail])
+  const ledger = useMemo(() => (detail ? buildLedger(detail) : { rows: [], pending: false }), [detail])
 
   const matches = detail?.gameweek?.matches ?? []
   const dgw = Boolean(detail) && (detail.gameweek.isDouble || matches.length === 2)
   const activeMatch = matches[Math.min(tab, Math.max(0, matches.length - 1))]
+  const matchRows = useMemo(() => {
+    if (!activeMatch) return null
+    let items = activeMatch.breakdown
+    if (!Array.isArray(items) || items.length === 0) {
+      const derived = deriveBreakdown({
+        ...activeMatch,
+        position: detail?.position || item?.pos,
+      })
+      if (derived.available) items = derived.items
+    }
+    if (!Array.isArray(items) || items.length === 0) return null
+    return buildStatRows(items, {
+      goals: activeMatch.goals,
+      assists: activeMatch.assists,
+      yellowCards: activeMatch.yellowCards,
+      redCards: activeMatch.redCards,
+    })
+  }, [activeMatch, detail?.position, item?.pos])
+  const fixtureMatches = matches.filter(
+    (m) => m.opponent?.name && m.opponent.name !== '—'
+  )
   const missing = state.status === 'error' || (!detail && state.status !== 'loading')
 
   const club = detail?.club ?? item?.club ?? ''
@@ -174,6 +436,7 @@ export function PlayerModal({ item, onClose, gw }) {
           ? { label: 'UNUSED', className: 'badge-neutral' }
           : null
   const total = detail?.gameweek?.totalPoints ?? item?.points ?? null
+  const yetToPlay = Boolean(detail?.yetToPlay ?? item?.yetToPlay)
 
   return (
     <div
@@ -213,13 +476,21 @@ export function PlayerModal({ item, onClose, gw }) {
               )}
             </span>
             <h2 id="player-modal-title">{detail?.name ?? item?.name}</h2>
-            <p className="modal-total">
-              GW {week} total
-              <b className="numeric">{total ?? '—'}</b>
-            </p>
-            {Boolean(detail?.yetToPlay ?? item?.yetToPlay) && (
-              <p className="modal-note">Yet to play</p>
-            )}
+            <div className="modal-hero-totals">
+              <span className="modal-stat-pill">
+                GW {week} · <b className="numeric">{total ?? '—'} pts</b>
+              </span>
+              {detail &&
+                detail.season !== null &&
+                detail.season !== undefined &&
+                detail.season !== '' &&
+                Number.isFinite(Number(detail.season)) && (
+                  <span className="modal-stat-pill is-season">
+                    Season · <b className="numeric">{detail.season} pts</b>
+                  </span>
+                )}
+            </div>
+            {yetToPlay && <p className="modal-note">Yet to play</p>}
           </div>
         </div>
 
@@ -234,38 +505,33 @@ export function PlayerModal({ item, onClose, gw }) {
 
         {!missing && state.status !== 'loading' && detail && (
           <>
-            <section aria-labelledby="ledger-heading">
-              <h3 id="ledger-heading" className="modal-section-title">
-                Points ledger
-              </h3>
-              <div className="points-ledger">
-                {rows.map((r) => (
-                  <div
-                    key={r.key}
-                    className={cn(
-                      'points-ledger-row',
-                      r.points < 0 && 'is-negative',
-                      r.total && 'is-total'
-                    )}
-                  >
-                    <span className="ledger-label">{r.label}</span>
-                    <span className="ledger-value">{r.value || ''}</span>
-                    <b className="ledger-points">
-                      {r.multiplier
-                        ? `${detail.multiplier}x`
-                        : r.points === null || r.points === undefined
-                          ? '—'
-                          : r.total
-                            ? r.points
-                            : signed(r.points)}
-                    </b>
-                  </div>
-                ))}
+            {fixtureMatches.length > 0 && (
+              <div className="modal-fixtures">
+                {fixtureMatches.map((m, i) => {
+                  const line = fixtureLine(m)
+                  return (
+                    <p className="modal-fixture-line" key={`${m.fixtureId || 'fixture'}-${i}`}>
+                      {dgw && <span className="modal-fixture-match">Match {i + 1}</span>}
+                      <span className="modal-fixture-main">{line.main}</span>
+                      {line.meta && <span className="modal-fixture-meta">{line.meta}</span>}
+                    </p>
+                  )
+                })}
               </div>
-              {rows.every((r) => r.pending) && (
-                <p className="modal-note">Breakdown pending</p>
-              )}
-            </section>
+            )}
+
+            {!yetToPlay && (
+              <section aria-labelledby="ledger-heading">
+                <h3 id="ledger-heading" className="modal-section-title">
+                  Points ledger
+                </h3>
+                <div className="points-ledger">
+                  {ledger.rows.map((r) => (
+                    <LedgerRow key={r.key} row={r} />
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section aria-labelledby="form-heading">
               <h3 id="form-heading" className="modal-section-title">
@@ -333,42 +599,33 @@ export function PlayerModal({ item, onClose, gw }) {
                           {activeMatch.opponent?.name || '—'}
                         </span>
                         <b className="numeric">
-                          {activeMatch.result?.home !== null &&
-                          activeMatch.result?.home !== undefined &&
-                          activeMatch.result?.away !== null &&
-                          activeMatch.result?.away !== undefined
+                          {hasScore(activeMatch.result)
                             ? `${activeMatch.result.home}–${activeMatch.result.away}`
                             : activeMatch.result?.status || '—'}
                         </b>
                       </div>
 
-                      {activeMatch.breakdownAvailable ? (
-                        <div className="dgw-stats">
-                          <span>
-                            Minutes <b className="numeric">{activeMatch.minutes ?? '—'}'</b>
-                          </span>
-                          <span>
-                            Goals <b className="numeric">{activeMatch.goals ?? 0}</b>
-                          </span>
-                          <span>
-                            Assists <b className="numeric">{activeMatch.assists ?? 0}</b>
-                          </span>
-                          <span>
-                            Match points{' '}
-                            <b className="numeric">
+                      {matchRows ? (
+                        <div className="points-ledger">
+                          {matchRows.map((r) => (
+                            <LedgerRow key={r.key} row={r} />
+                          ))}
+                          <div className="points-ledger-row is-total">
+                            <span className="ledger-label">Match points</span>
+                            <span className="ledger-value" />
+                            <b className="ledger-points">
                               {activeMatch.displayPoints ?? '—'}
                             </b>
-                          </span>
+                          </div>
                         </div>
                       ) : (
                         <p className="modal-note">Match breakdown pending</p>
                       )}
 
-                      {activeMatch.breakdownAvailable &&
-                        (detail.multiplier === 2 || Number(detail.stadiumBonus) !== 0) && (
+                      {matchRows &&
+                        (Number(detail.multiplier) === 2 || Number(detail.stadiumBonus) !== 0) && (
                           <p className="modal-note">
-                            Match points apply the same ×2 multiplier and home stadium bonus as the
-                            gameweek total; the ledger lists the base lines first.
+                            Includes stadium bonus and captain multiplier.
                           </p>
                         )}
                     </>

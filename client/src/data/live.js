@@ -648,6 +648,7 @@ const normalizeMatches = (row, shells) => {
       fixtureId: String(m.fixtureId ?? m.fixture_id ?? shell.fixtureId ?? ''),
       gameweek: Number(m.gameweek ?? shell.gameweek ?? row.gameweek),
       venue: m.venue === 'home' || m.venue === 'away' ? m.venue : shell.venue ?? null,
+      kickoff: m.kickoff ?? shell.kickoff ?? null,
       opponent: {
         name: m.opponent?.name ?? m.opponentName ?? shell.opponent?.name ?? '—',
         code: m.opponent?.code ?? m.opponentCode ?? shell.opponent?.code ?? '—',
@@ -754,6 +755,7 @@ export async function fetchPlayerDetail(playerName, teamName, gw) {
       fixtureId: String(f.id),
       gameweek: gw,
       venue: isHome ? 'home' : 'away',
+      kickoff: f.kickoff ?? null,
       opponent: { name: isHome ? f.awayName : f.homeName, code: isHome ? f.away : f.home },
       result: {
         home: f.score?.[0] ?? null,
@@ -785,6 +787,7 @@ export async function fetchPlayerDetail(playerName, teamName, gw) {
       fixtureId: 'aggregate',
       gameweek: gw,
       venue: opp?.venue ?? null,
+      kickoff: opp?.kickoff ?? null,
       opponent: { name: opp?.name ?? '—', code: opp?.code ?? '—' },
       result: { home: null, away: null, status: 'UNKNOWN' },
       minutes: null,

@@ -4449,6 +4449,18 @@ h3 {
   width: 100%;
   min-width: 0;
 }
+.pitch-line:has(> :nth-child(5)) {
+  gap: clamp(3px, 1.1vw, 7px);
+}
+.pitch-line:has(> :nth-child(4):last-child) {
+  gap: 14px;
+}
+.pitch-line:has(> :nth-child(3):last-child) {
+  gap: 24px;
+}
+.pitch-line:has(> :nth-child(2):last-child) {
+  gap: 36px;
+}
 
 /* ============================================================================
    Item 4: Player Card Architecture (Composite Avatar Disk Overlapping Plaque)
@@ -4901,6 +4913,18 @@ h3 {
   .pitch-line {
     gap: 9px;
   }
+  .pitch-line:has(> :nth-child(5)) {
+    gap: 9px;
+  }
+  .pitch-line:has(> :nth-child(4):last-child) {
+    gap: 18px;
+  }
+  .pitch-line:has(> :nth-child(3):last-child) {
+    gap: 28px;
+  }
+  .pitch-line:has(> :nth-child(2):last-child) {
+    gap: 44px;
+  }
 
   .player-card-unit {
     width: 72px;
@@ -4947,6 +4971,18 @@ h3 {
 @media (min-width: 768px) {
   .pitch-line {
     gap: 14px;
+  }
+  .pitch-line:has(> :nth-child(5)) {
+    gap: 14px;
+  }
+  .pitch-line:has(> :nth-child(4):last-child) {
+    gap: 28px;
+  }
+  .pitch-line:has(> :nth-child(3):last-child) {
+    gap: 38px;
+  }
+  .pitch-line:has(> :nth-child(2):last-child) {
+    gap: 52px;
   }
 
   .player-card-unit {
@@ -5036,6 +5072,52 @@ h3 {
   font: 900 18px/1 var(--font-heading);
 }
 
+.modal-season {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.modal-season b {
+  margin: 0 2px;
+  color: var(--card-foreground);
+  font: 900 14px/1 var(--font-heading);
+}
+
+.modal-hero-totals {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.modal-stat-pill {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.modal-stat-pill b {
+  color: var(--primary-text);
+  font: 900 16px/1 var(--font-heading);
+}
+
+.modal-stat-pill.is-season {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.modal-stat-pill.is-season b {
+  color: var(--card-foreground);
+  font: 800 14px/1 var(--font-heading);
+}
+
 .modal-section-title {
   margin: 4px 0 0;
   color: var(--muted-foreground);
@@ -5049,6 +5131,37 @@ h3 {
   color: var(--muted-foreground);
   font-size: 12px;
   font-weight: 700;
+}
+
+.modal-fixtures {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.modal-fixture-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  color: var(--card-foreground);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.modal-fixture-match {
+  color: var(--muted-foreground);
+  font: 800 10px/1 var(--font-heading);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.modal-fixture-meta {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .points-ledger {
@@ -5104,6 +5217,17 @@ h3 {
 .points-ledger-row.is-total .ledger-points {
   color: var(--card-foreground);
   font-size: 17px;
+}
+
+.points-ledger-row.is-note {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 24px;
+  border-bottom: 0;
+}
+
+.points-ledger-row.is-note .ledger-label {
+  color: var(--muted-foreground);
+  font-style: italic;
 }
 
 .form-timeline {
@@ -5221,32 +5345,6 @@ h3 {
 .dgw-match-head b {
   color: var(--card-foreground);
   font: 900 16px/1 var(--font-heading);
-}
-
-.dgw-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.dgw-stats span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--card);
-  color: var(--card-foreground);
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.dgw-stats b {
-  color: var(--primary-text);
-  font: 900 13px/1 var(--font-heading);
 }
 
 .dgw-cumulative {
